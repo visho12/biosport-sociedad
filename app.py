@@ -8,25 +8,20 @@ import plotly.graph_objects as go
 # 1. Configuración de página
 st.set_page_config(page_title="Bio Sport - Evaluaciones", page_icon="⚡", layout="centered")
 
-# 2. Función de conexión ultra-segura
-def conectar_sheets():
-    scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
-    # Intentamos leer la llave de los Secretos de Streamlit
-    try:
-        # Dentro de la función conectar_sheets:
+# 2. Función de conexión con manejo de errores limpio
 def conectar_sheets():
     scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
     try:
-        # El truco del strict=False ayuda a limpiar el JSON si tiene errores de pegado
+        # El parámetro strict=False ayuda a ignorar caracteres invisibles en el JSON
         creds_info = json.loads(st.secrets["google_credentials"], strict=False)
         creds = Credentials.from_service_account_info(creds_info, scopes=scopes)
         client = gspread.authorize(creds)
         return client
     except Exception as e:
-        st.error(f"⚠️ Error crítico con la llave JSON: {e}")
+        st.error(f"⚠️ Error en la llave JSON de los Secrets: {e}")
         return None
 
-# --- LAS FUNCIONES DE GRÁFICOS SIGUEN IGUAL ---
+# 3. Funciones para Gráficos
 def crear_radar(dict_puntos):
     categories = list(dict_puntos.keys())
     valores = list(dict_puntos.values())
@@ -45,41 +40,74 @@ def crear_velocimetro(titulo, valor, min_val, max_val, z_roja, z_ama, z_ver):
     fig.update_layout(height=220)
     return fig
 
-# --- LOGO ---
-st.image("logo.png", width=200) # Ajustado para que no falle si no hay columnas
+# --- INTERFAZ VISUAL ---
+st.image("logo.png", width=200)
+st.markdown("## Sistema de Evaluación Bio Sport")
 
-# --- FORMULARIO ---
 with st.form("evaluacion_form"):
     st.write("### 📝 Datos del Atleta")
-    nombre = st.text_input("Nombre completo")
-    peso = st.number_input("Peso (kg)", min_value=1.0)
-    imtp = st.number_input("IMTP (N)")
-    sj = st.number_input("SJ (cm)")
-    cmj = st.number_input("CMJ (cm)")
-    aduc = st.number_input("Aductores (N)")
-    abduc = st.number_input("Abductores (N)")
+    col1, col2 = st.columns(2)
+    with col1:
+        nombre = st.text_input("Nombre completo")
+        peso = st.number_input("Peso (kg)", min_value=1.0)
+    with col2:
+        deporte = st.text_input("Deporte")
+        edad = st.number_input("Edad", min_value=5)
     
-    enviar = st.form_submit_button("📊 GUARDAR Y VER REPORTE")
+    st.write("---")
+    st.write("### 🏋️ Resultados de Pruebas")
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        imtp = st.number_input("IMTP (N)")
+    with c2:
+        sj = st.number_input("SJ (cm)")
+    with c3:
+        cmj = st.number_input("CMJ (cm)")
+        
+    st.write("### ⚖️ Dinamometría de Cadera")
+    ca, cb = st.columns(2)
+    with ca:
+        aduc = st.number_input("Aductores (N)")
+    with cb:
+        abduc = st.number_input("Abductores (N)")
+    
+    enviar = st.form_submit_button("📊 GUARDAR Y GENERAR INFORME", use_container_width=True)
 
+# --- LÓGICA AL PRESIONAR EL BOTÓN ---
 if enviar:
     if nombre and peso > 0:
-        # Intentar conexión
         cliente = conectar_sheets()
         if cliente:
             try:
-                # OJO: Aquí es donde suele fallar. El nombre debe ser EXACTO.
+                # El nombre de la planilla debe ser EXACTO en tu Google Drive
                 hoja = cliente.open("BioSport_BD").sheet1
                 fecha = datetime.now().strftime("%d/%m/%Y")
-                hoja.append_row([fecha, nombre, peso, imtp, sj, cmj, aduc, abduc])
-                st.success("✅ Guardado correctamente en Google Sheets")
                 
-                # CÁLCULOS Y GRÁFICOS (Solo si guarda)
+                # Cálculos
                 f_rel = imtp/peso
-                st.plotly_chart(crear_velocimetro("Fuerza Rel.", f_rel, 0, 60, [0,30], [30,40], [40,60]))
-                st.plotly_chart(crear_radar({"Fuerza": f_rel/6, "Salto": sj/5, "Ratio": (aduc/abduc)*5 if abduc>0 else 0}))
+                ratio = aduc/abduc if abduc > 0 else 0
+                
+                # Guardar fila
+                hoja.append_row([fecha, nombre, peso, imtp, sj, cmj, aduc, abduc, round(f_rel,2), round(ratio,2)])
+                st.success(f"✅ ¡Datos de {nombre} guardados con éxito!")
+                
+                # Mostrar Reporte Visual
+                st.markdown("---")
+                st.header(f"📊 Informe de Rendimiento")
+                
+                st.plotly_chart(crear_velocimetro("Fuerza Relativa (N/kg)", f_rel, 0, 60, [0,30], [30,40], [40,60]))
+                
+                # Normalización para el radar (escala 0-10)
+                puntos = {
+                    "Fuerza": min((f_rel/45)*10, 10),
+                    "Salto SJ": min((sj/50)*10, 10),
+                    "Salto CMJ": min((cmj/60)*10, 10),
+                    "Balance": max(0, 10 - abs(1-ratio)*10)
+                }
+                st.plotly_chart(crear_radar(puntos))
                 
             except Exception as e:
                 st.error(f"❌ Error en la planilla: {e}")
-                st.info("Revisa: 1. Que la planilla se llame BioSport_BD. 2. Que la compartiste con el correo del JSON.")
+                st.info("Asegúrate de que el archivo se llame BioSport_BD y tenga una pestaña llamada Sheet1.")
     else:
-        st.warning("Escribe el nombre y el peso.")
+        st.warning("⚠️ Por favor, ingresa al menos el Nombre y el Peso.")
