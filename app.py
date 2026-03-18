@@ -23,7 +23,8 @@ def conectar_sheets():
 # --- ENCABEZADO CON LOGO ---
 col1, col2, col3 = st.columns([1, 2, 1])
 with col2:
-    st.image("Bio Sport - Logo Perfil FB.png", use_container_width=True)
+   with col2:
+    st.image("logo.png", use_container_width=True)
 
 st.markdown("<h4 style='text-align: center; color: gray;'>Sistema de Evaluación de Rendimiento</h4>", unsafe_allow_html=True)
 st.markdown("---")
