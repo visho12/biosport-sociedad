@@ -14,7 +14,11 @@ def conectar_sheets():
     # Intentamos leer la llave de los Secretos de Streamlit
     try:
         # Dentro de la función conectar_sheets:
-creds_info = json.loads(st.secrets["google_credentials"], strict=False)
+def conectar_sheets():
+    scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
+    try:
+        # El truco del strict=False ayuda a limpiar el JSON si tiene errores de pegado
+        creds_info = json.loads(st.secrets["google_credentials"], strict=False)
         creds = Credentials.from_service_account_info(creds_info, scopes=scopes)
         client = gspread.authorize(creds)
         return client
