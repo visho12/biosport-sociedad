@@ -1,15 +1,18 @@
 import streamlit as st
 
-# Configuración de la página (esto debe ir siempre primero)
+# Configuración de la página
 st.set_page_config(page_title="Bio Sport - Evaluaciones", page_icon="⚡", layout="centered")
 
-# --- ENCABEZADO ---
-st.markdown("<h1 style='text-align: center; color: #1E90FF;'>⚡ BIO SPORT</h1>", unsafe_allow_html=True)
+# --- ENCABEZADO CON LOGO ---
+col1, col2, col3 = st.columns([1, 2, 1])
+with col2:
+    # Asegúrate de que el nombre aquí sea exactamente igual al archivo que subiste
+    st.image("logo.png", use_container_width=True)
+
 st.markdown("<h4 style='text-align: center; color: gray;'>Sistema de Evaluación de Rendimiento</h4>", unsafe_allow_html=True)
 st.markdown("---")
 
 # --- FORMULARIO EN DESPLEGABLE ---
-# Usamos un 'expander' para agrupar los datos. En el celular ayuda a limpiar la pantalla.
 with st.expander("📝 INGRESAR DATOS DEL ATLETA", expanded=True):
     st.write("##### Perfil Básico")
     col1, col2 = st.columns(2)
@@ -57,7 +60,6 @@ if calcular:
         # --- SECCIÓN IMTP VISUAL ---
         st.write("### 🏋️ Fuerza Relativa (IMTP)")
         
-        # Lógica de colores para la métrica
         if fuerza_relativa > 40:
             estado_fuerza = "🟢 Óptimo"
             color_fuerza = "normal"
@@ -87,7 +89,6 @@ if calcular:
                 
             st.metric(label="Ratio (Aductores/Abductores)", value=f"{ratio:.2f}", delta=estado_ratio, delta_color=color_ratio)
             
-            # Comparativa rápida de fuerza
             col_bar1, col_bar2 = st.columns(2)
             with col_bar1:
                 st.info(f"**Aductores:** {aductores} N")
