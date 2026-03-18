@@ -1,18 +1,34 @@
 import streamlit as st
+import gspread
+from google.oauth2.service_account import Credentials
+import json
+from datetime import datetime
 
 # Configuración de la página
 st.set_page_config(page_title="Bio Sport - Evaluaciones", page_icon="⚡", layout="centered")
 
+# --- FUNCIÓN PARA CONECTAR A GOOGLE SHEETS ---
+@st.cache_resource
+def conectar_sheets():
+    scopes = [
+        "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/drive"
+    ]
+    # Lee los secretos que guardaste en Streamlit
+    creds_dict = json.loads(st.secrets["google_credentials"])
+    creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
+    client = gspread.authorize(creds)
+    return client
+
 # --- ENCABEZADO CON LOGO ---
 col1, col2, col3 = st.columns([1, 2, 1])
 with col2:
-    # Asegúrate de que el nombre aquí sea exactamente igual al archivo que subiste
-    st.image("logo.png", use_container_width=True)
+    st.image("Bio Sport - Logo Perfil FB.png", use_container_width=True)
 
 st.markdown("<h4 style='text-align: center; color: gray;'>Sistema de Evaluación de Rendimiento</h4>", unsafe_allow_html=True)
 st.markdown("---")
 
-# --- FORMULARIO EN DESPLEGABLE ---
+# --- FORMULARIO ---
 with st.expander("📝 INGRESAR DATOS DEL ATLETA", expanded=True):
     st.write("##### Perfil Básico")
     col1, col2 = st.columns(2)
@@ -45,57 +61,73 @@ with st.expander("📝 INGRESAR DATOS DEL ATLETA", expanded=True):
 
     notas = st.text_area("Notas del Día (Opcional)")
 
-# --- BOTÓN DE CÁLCULO ---
+# --- BOTÓN DE CÁLCULO Y GUARDADO ---
 st.markdown("<br>", unsafe_allow_html=True)
-calcular = st.button("📊 CALCULAR RESULTADOS", type="primary", use_container_width=True)
+calcular = st.button("📊 CALCULAR Y GUARDAR RESULTADOS", type="primary", use_container_width=True)
 
-# --- DASHBOARD DE RESULTADOS ---
+# --- LÓGICA DE RESULTADOS ---
 if calcular:
-    if peso > 0:
+    if peso > 0 and nombre != "":
+        # Cálculos
+        fuerza_relativa = imtp / peso
+        
+        # Lógica de estados
+        if fuerza_relativa > 40:
+            estado_fuerza = "🟢 Óptimo"
+        elif 30 <= fuerza_relativa <= 40:
+            estado_fuerza = "🟡 Medio"
+        else:
+            estado_fuerza = "🔴 Déficit"
+            
+        ratio = 0
+        estado_ratio = "-"
+        if abductores > 0:
+            ratio = aductores / abductores
+            if 0.90 <= ratio <= 1.10:
+                estado_ratio = "🟢 Simetría"
+            elif (0.80 <= ratio < 0.90) or (1.10 < ratio <= 1.20):
+                estado_ratio = "🟡 Precaución"
+            else:
+                estado_ratio = "🔴 Desbalance"
+
+        # --- GUARDAR EN GOOGLE SHEETS ---
+        try:
+            with st.spinner('Procesando y guardando datos en la base de datos...'):
+                cliente = conectar_sheets()
+                # MUY IMPORTANTE: El nombre aquí debe ser exactamente el nombre de tu archivo en Google Drive
+                hoja = cliente.open("BioSport_BD").sheet1
+                
+                fecha_actual = datetime.now().strftime("%d-%m-%Y %H:%M")
+                
+                nueva_fila = [
+                    fecha_actual, nombre, edad, peso, deporte, 
+                    imtp, round(fuerza_relativa, 2), estado_fuerza, 
+                    sj, cmj, abalakov, 
+                    aductores, abductores, round(ratio, 2) if abductores > 0 else 0, estado_ratio, 
+                    notas
+                ]
+                hoja.append_row(nueva_fila)
+                
+            st.success(f"✅ ¡Atleta {nombre} evaluado y guardado en Google Sheets con éxito!")
+        except Exception as e:
+            st.error(f"❌ Error al guardar en la nube. Revisa que el nombre de la planilla sea exactamente BioSport_BD. Detalle: {e}")
+
+        # --- MOSTRAR INFORME EN PANTALLA ---
         st.markdown("---")
         st.markdown("<h2 style='text-align: center;'>INFORME DEL ATLETA</h2>", unsafe_allow_html=True)
         
-        fuerza_relativa = imtp / peso
-        
-        # --- SECCIÓN IMTP VISUAL ---
         st.write("### 🏋️ Fuerza Relativa (IMTP)")
-        
-        if fuerza_relativa > 40:
-            estado_fuerza = "🟢 Óptimo"
-            color_fuerza = "normal"
-        elif 30 <= fuerza_relativa <= 40:
-            estado_fuerza = "🟡 Medio"
-            color_fuerza = "off"
-        else:
-            estado_fuerza = "🔴 Déficit"
-            color_fuerza = "inverse"
-            
+        color_fuerza = "normal" if "Óptimo" in estado_fuerza else "off" if "Medio" in estado_fuerza else "inverse"
         st.metric(label="Newtons por Kg", value=f"{fuerza_relativa:.2f} N/kg", delta=estado_fuerza, delta_color=color_fuerza)
         
-        # --- SECCIÓN RATIO VISUAL ---
         st.write("### ⚖️ Balance de Cadera")
         if abductores > 0:
-            ratio = aductores / abductores
-            
-            if 0.90 <= ratio <= 1.10:
-                estado_ratio = "🟢 Simetría (Bajo Riesgo)"
-                color_ratio = "normal"
-            elif (0.80 <= ratio < 0.90) or (1.10 < ratio <= 1.20):
-                estado_ratio = "🟡 Precaución (Leve Dominancia)"
-                color_ratio = "off"
-            else:
-                estado_ratio = "🔴 Desbalance (Riesgo de Lesión)"
-                color_ratio = "inverse"
-                
+            color_ratio = "normal" if "Simetría" in estado_ratio else "off" if "Precaución" in estado_ratio else "inverse"
             st.metric(label="Ratio (Aductores/Abductores)", value=f"{ratio:.2f}", delta=estado_ratio, delta_color=color_ratio)
-            
             col_bar1, col_bar2 = st.columns(2)
             with col_bar1:
                 st.info(f"**Aductores:** {aductores} N")
             with col_bar2:
                 st.warning(f"**Abductores:** {abductores} N")
-        else:
-            st.info("Ingresa los datos de abductores para calcular el ratio.")
-            
     else:
-        st.error("⚠️ Por favor, ingresa el peso del atleta para calcular la fuerza relativa.")
+        st.error("⚠️ Es obligatorio ingresar al menos el Nombre y el Peso del atleta.")
