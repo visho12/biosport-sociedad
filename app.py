@@ -20,7 +20,7 @@ def conectar_sheets():
     except:
         return None
 
-# 3. Funciones Visuales
+# 3. Funciones Visuales (Velocímetros y Radar)
 def crear_velocimetro(titulo, valor, min_val, max_val, z_roja, z_ama, z_ver):
     fig = go.Figure(go.Indicator(
         mode = "gauge+number", value = valor,
@@ -62,7 +62,8 @@ if cliente:
         registros = hoja.get_all_records()
         if registros:
             data_historica = pd.DataFrame(registros)
-            data_historica.columns = data_historica.columns.str.strip()
+            # LIMPIEZA CRÍTICA: Quitar espacios en blanco de los nombres de columnas
+            data_historica.columns = [str(c).strip() for c in data_historica.columns]
             if 'Nombre' in data_historica.columns:
                 lista_unique = sorted(data_historica['Nombre'].unique().tolist())
                 lista_atletas += [n for n in lista_unique if n]
@@ -107,21 +108,20 @@ if btn_guardar:
         ratio = round(aduc / abduc, 1) if abduc > 0 else 0
         fecha = datetime.now().strftime("%d/%m/%Y")
         
-        # LÓGICA DE ESTADOS (Para el Excel)
+        # LÓGICA DE ESTADOS
         est_fuerza = "Óptimo" if f_rel > 40 else "Medio" if f_rel >= 30 else "Déficit"
         est_ratio = "Simetría" if 0.9 <= ratio <= 1.1 else "Precaución" if 0.8 <= ratio <= 1.2 else "Desbalance"
 
-        # Buscar evaluación anterior
+        # Buscar evaluación anterior (CON PROTECCIÓN CONTRA KEYERROR)
         eval_previa = None
-        if not data_historica.empty:
+        if not data_historica.empty and 'Nombre' in data_historica.columns:
             anteriores = data_historica[data_historica['Nombre'] == nombre]
             if not anteriores.empty:
                 eval_previa = anteriores.iloc[-1]
 
-        # Guardar en Sheets (Fila completa con estados y notas)
+        # Guardar en Sheets
         try:
             hoja = cliente.open("BioSport_BD").sheet1
-            # Orden: Fecha, Nombre, Edad, Peso, Deporte, IMTP, F_Rel, Est_Fuerza, SJ, CMJ, Abalakov, Aduc, Abduc, Ratio, Est_Ratio, Notas
             hoja.append_row([fecha, nombre, edad, peso, "", imtp, f_rel, est_fuerza, sj, cmj, abalakov, aduc, abduc, ratio, est_ratio, notas])
             st.success(f"✅ ¡Evaluación de {nombre} guardada con éxito!")
             
@@ -136,18 +136,26 @@ if btn_guardar:
                 st.plotly_chart(crear_velocimetro("Ratio Cadera", ratio, 0, 2, [0, 0.8], [0.8, 0.9], [0.9, 1.1]), use_container_width=True)
             
             # Radar
-            def norm(v, esc): return round(min((float(v)/esc)*10, 10), 1)
+            def norm(v, esc): 
+                try: return round(min((float(v)/esc)*10, 10), 1)
+                except: return 0
+            
             puntos_act = {"Fuerza Rel.": norm(f_rel, 4.5), "SJ": norm(sj, 5), "CMJ": norm(cmj, 6), "Abalakov": norm(abalakov, 7), "Salud Cadera": round(max(0, 10 - abs(1-ratio)*10), 1)}
             
             puntos_prev = None
+            # Solo intentamos crear la sombra gris si las columnas existen en el historial
             if eval_previa is not None:
-                puntos_prev = {
-                    "Fuerza Rel.": norm(eval_previa['Fuerza_Relativa'], 4.5), 
-                    "SJ": norm(eval_previa['SJ'], 5), 
-                    "CMJ": norm(eval_previa['CMJ'], 6), 
-                    "Abalakov": norm(eval_previa['Abalakov'], 7),
-                    "Salud Cadera": round(max(0, 10 - abs(1-float(eval_previa['Ratio']))*10), 1)
-                }
+                try:
+                    puntos_prev = {
+                        "Fuerza Rel.": norm(eval_previa.get('Fuerza_Relativa', 0), 4.5), 
+                        "SJ": norm(eval_previa.get('SJ', 0), 5), 
+                        "CMJ": norm(eval_previa.get('CMJ', 0), 6), 
+                        "Abalakov": norm(eval_previa.get('Abalakov', 0), 7),
+                        "Salud Cadera": round(max(0, 10 - abs(1-float(eval_previa.get('Ratio', 1)))*10), 1)
+                    }
+                except:
+                    puntos_prev = None
+
             st.plotly_chart(crear_radar(puntos_act, puntos_prev), use_container_width=True)
             
         except Exception as e:
