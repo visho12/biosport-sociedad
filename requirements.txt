@@ -1,5 +1,7 @@
 streamlit
-streamlit
 gspread
 google-auth
+pandas
 plotly
+reportlab
+Pillow
