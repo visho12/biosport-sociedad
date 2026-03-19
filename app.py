@@ -9,7 +9,7 @@ import plotly.graph_objects as go
 # 1. Configuración de página
 st.set_page_config(page_title="Bio Sport Pro", page_icon="⚡", layout="centered")
 
-# 2. Conexión a Base de Datos
+# 2. Función de conexión
 @st.cache_resource
 def conectar_sheets():
     scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
@@ -20,7 +20,7 @@ def conectar_sheets():
     except:
         return None
 
-# 3. Funciones Visuales (Velocímetros y Radar)
+# 3. Funciones Visuales
 def crear_velocimetro(titulo, valor, min_val, max_val, z_roja, z_ama, z_ver):
     fig = go.Figure(go.Indicator(
         mode = "gauge+number", value = valor,
@@ -41,19 +41,14 @@ def crear_velocimetro(titulo, valor, min_val, max_val, z_roja, z_ama, z_ver):
 def crear_radar(puntos_actual, puntos_previo=None):
     categories = list(puntos_actual.keys())
     fig = go.Figure()
-    
-    # Datos Actuales (Azul)
     val_act = list(puntos_actual.values())
     val_act += val_act[:1]
     fig.add_trace(go.Scatterpolar(r=val_act, theta=categories + [categories[0]], fill='toself', name='Actual', line_color='#1E90FF'))
-    
-    # Datos Previos (Sombra Gris si existen)
     if puntos_previo:
         val_prev = list(puntos_previo.values())
         val_prev += val_prev[:1]
         fig.add_trace(go.Scatterpolar(r=val_prev, theta=categories + [categories[0]], fill='toself', name='Anterior', line_color='rgba(128, 128, 128, 0.4)'))
-    
-    fig.update_layout(polar=dict(radialaxis=dict(visible=True, range=[0, 10])), showlegend=True, height=400, title="Perfil de Rendimiento")
+    fig.update_layout(polar=dict(radialaxis=dict(visible=True, range=[0, 10])), showlegend=True, height=400)
     return fig
 
 # 4. Carga de Datos Históricos
@@ -93,10 +88,11 @@ with c2:
     abalakov = st.number_input("Abalakov (cm)", step=0.1, format="%.1f")
     edad = st.number_input("Edad", min_value=0, step=1)
 
-st.write("### ⚖️ Dinamometría")
-ca, cb = st.columns(2)
+st.write("### ⚖️ Dinamometría y Notas")
+ca, cb, cc = st.columns([1,1,2])
 with ca: aduc = st.number_input("Aductores (N)", step=1.0)
 with cb: abduc = st.number_input("Abductores (N)", step=1.0)
+with cc: notas = st.text_area("Notas / Observaciones")
 
 st.divider()
 st.warning("🔒 **Seguro de Guardado:** Activa para habilitar el botón.")
@@ -106,11 +102,15 @@ btn_guardar = st.button("📊 GUARDAR Y GENERAR INFORME", type="primary", use_co
 
 if btn_guardar:
     if nombre and peso > 0:
-        # CÁLCULOS (Un decimal)
+        # CÁLCULOS
         f_rel = round(imtp / peso, 1)
         ratio = round(aduc / abduc, 1) if abduc > 0 else 0
         fecha = datetime.now().strftime("%d/%m/%Y")
         
+        # LÓGICA DE ESTADOS (Para el Excel)
+        est_fuerza = "Óptimo" if f_rel > 40 else "Medio" if f_rel >= 30 else "Déficit"
+        est_ratio = "Simetría" if 0.9 <= ratio <= 1.1 else "Precaución" if 0.8 <= ratio <= 1.2 else "Desbalance"
+
         # Buscar evaluación anterior
         eval_previa = None
         if not data_historica.empty:
@@ -118,50 +118,38 @@ if btn_guardar:
             if not anteriores.empty:
                 eval_previa = anteriores.iloc[-1]
 
-        # Guardar en Sheets
+        # Guardar en Sheets (Fila completa con estados y notas)
         try:
             hoja = cliente.open("BioSport_BD").sheet1
-            hoja.append_row([fecha, nombre, edad, peso, "", imtp, f_rel, "", sj, cmj, abalakov, aduc, abduc, ratio, "", ""])
-            st.success(f"✅ ¡Datos de {nombre} guardados!")
+            # Orden: Fecha, Nombre, Edad, Peso, Deporte, IMTP, F_Rel, Est_Fuerza, SJ, CMJ, Abalakov, Aduc, Abduc, Ratio, Est_Ratio, Notas
+            hoja.append_row([fecha, nombre, edad, peso, "", imtp, f_rel, est_fuerza, sj, cmj, abalakov, aduc, abduc, ratio, est_ratio, notas])
+            st.success(f"✅ ¡Evaluación de {nombre} guardada con éxito!")
             
-            # --- REPORTE VISUAL (EL QUE TE GUSTABA) ---
+            # --- REPORTE VISUAL ---
             st.markdown("---")
             st.header(f"📊 Informe: {nombre}")
             
-            # Velocímetros
             col_v1, col_v2 = st.columns(2)
             with col_v1:
                 st.plotly_chart(crear_velocimetro("Fuerza Relativa (N/kg)", f_rel, 0, 60, [0, 30], [30, 40], [40, 60]), use_container_width=True)
             with col_v2:
                 st.plotly_chart(crear_velocimetro("Ratio Cadera", ratio, 0, 2, [0, 0.8], [0.8, 0.9], [0.9, 1.1]), use_container_width=True)
             
-            # Gráfico de Radar Evolutivo
+            # Radar
             def norm(v, esc): return round(min((float(v)/esc)*10, 10), 1)
-            
-            puntos_act = {
-                "Fuerza Rel.": norm(f_rel, 4.5), "SJ": norm(sj, 5), 
-                "CMJ": norm(cmj, 6), "Abalakov": norm(abalakov, 7),
-                "Salud Cadera": round(max(0, 10 - abs(1-ratio)*10), 1)
-            }
+            puntos_act = {"Fuerza Rel.": norm(f_rel, 4.5), "SJ": norm(sj, 5), "CMJ": norm(cmj, 6), "Abalakov": norm(abalakov, 7), "Salud Cadera": round(max(0, 10 - abs(1-ratio)*10), 1)}
             
             puntos_prev = None
             if eval_previa is not None:
-                p_f = eval_previa['Fuerza_Relativa']
-                p_sj = eval_previa['SJ']
-                p_cmj = eval_previa['CMJ']
-                p_aba = eval_previa['Abalakov']
-                p_rat = eval_previa['Ratio']
                 puntos_prev = {
-                    "Fuerza Rel.": norm(p_f, 4.5), "SJ": norm(p_sj, 5), 
-                    "CMJ": norm(p_cmj, 6), "Abalakov": norm(p_aba, 7),
-                    "Salud Cadera": round(max(0, 10 - abs(1-float(p_rat))*10), 1)
+                    "Fuerza Rel.": norm(eval_previa['Fuerza_Relativa'], 4.5), 
+                    "SJ": norm(eval_previa['SJ'], 5), 
+                    "CMJ": norm(eval_previa['CMJ'], 6), 
+                    "Abalakov": norm(eval_previa['Abalakov'], 7),
+                    "Salud Cadera": round(max(0, 10 - abs(1-float(eval_previa['Ratio']))*10), 1)
                 }
-            
             st.plotly_chart(crear_radar(puntos_act, puntos_prev), use_container_width=True)
             
-            if eval_previa is not None:
-                st.info("💡 La sombra gris representa la última evaluación registrada de este atleta.")
-
         except Exception as e:
             st.error(f"Error al guardar: {e}")
     else:
