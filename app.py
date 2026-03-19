@@ -285,7 +285,7 @@ if cliente:
         pass
 
 # --- INTERFAZ DE INGRESO ---
-st.image("logo_original.png", width=180) # Logo original de Streamlit
+st.image("logo.png", width=180) # Logo original de Streamlit
 st.title("⚡ Evaluación Bio Sport")
 
 atleta_sel = st.selectbox("🔍 Buscar Atleta", lista_atletas)
@@ -349,7 +349,7 @@ if btn_guardar:
                     "f_rel": f_rel, "est_fuerza": est_fuerza, "sj": sj, "cmj": cmj, "abalakov": abalakov,
                     "aduc": aduc, "abduc": abduc, "ratio": ratio, "est_ratio": est_ratio,
                     "notas": notas, "edad": edad
-                }, puntos_act_streamlit, "logo_original.png") # Usamos el logo original para el PDF
+                }, puntos_act_streamlit, "logo.png") # Usamos el logo original para el PDF
 
             # --- GUARDAMOS LOS DATOS EN LA MEMORIA ---
             st.session_state.informe_actual = {
