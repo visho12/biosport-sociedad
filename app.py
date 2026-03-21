@@ -185,14 +185,27 @@ def generar_pdf_estilo_imagen(datos, puntos_radar, logo_path):
     img_arana = PILImage.new('RGBA', (int(10 * cm), int(10 * cm)), (255, 255, 255, 0))
     draw_arana = ImageDraw.Draw(img_arana)
     
-    etiquetas_radar = ["FUERZA", "SJ", "CMJ", "ABALAKOV", "CADERA"]
-    puntos_radar_imagen = {
-        "FUERZA": min((datos['f_rel'] / 50) * 10, 10),
-        "SJ": min((datos['sj'] / 50) * 10, 10),
-        "CMJ": min((datos['cmj'] / 60) * 10, 10),
-        "ABALAKOV": min((datos['abalakov'] / 70) * 10, 10),
-        "CADERA": round(max(0, 10 - abs(1-datos['ratio'])*10), 1)
+    # --- 4. PEGAR EL GRÁFICO DE ARAÑA ---
+    
+    # Baremos de Excelencia (El "10 perfecto")
+    MAX_SJ = 50.0        # 50 cm es un salto SJ de élite
+    MAX_CMJ = 60.0       # 60 cm es un CMJ de élite
+    MAX_ABALAKOV = 70.0  # 70 cm es un Abalakov de élite
+    MAX_F_REL = 50.0     # 50 N/kg de fuerza relativa es excelente
+
+    # Mapeo de datos con la escala real
+    puntos_radar = {
+        "TEST MIRAELI": min((datos['sj'] / MAX_SJ) * 10, 10),
+        "TEST WLST": min((datos['cmj'] / MAX_CMJ) * 10, 10),
+        "TEST BKO": min((datos['abalakov'] / MAX_ABALAKOV) * 10, 10),
+        "TEST PIRAMIDAL": min((datos['f_rel'] / MAX_F_REL) * 10, 10),
+        
+        # Fórmula de movilidad: 1.0 es perfecto (10 pts). 
+        # Cada 0.1 de desbalance le resta 2 puntos.
+        "MOVILIDAD": max(0, 10 - abs(1 - datos['ratio']) * 20)
     }
+    
+    ruta_radar = dibujar_arana_png(puntos_radar, list(puntos_radar.keys()))
 
     dibujar_grafico_arana(draw_arana, int(5 * cm), int(5 * cm), int(3.5 * cm), puntos_radar_imagen, etiquetas_radar)
     
