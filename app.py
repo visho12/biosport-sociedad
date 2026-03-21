@@ -112,20 +112,30 @@ def generar_pdf_plantilla(datos):
     c.drawString(295, height - 153, f"{datos['peso']} kg")
     c.drawString(295, height - 195, f"{datos['estatura']} m")
     
+    # === LA CORRECCIÓN ESTÁ AQUÍ ===
     def dibujar_marcador(canvas, x_inicio, x_fin, y_barra, valor, valor_max):
         porcentaje = min(max(valor / valor_max, 0), 1)
         x_pos = x_inicio + (x_fin - x_inicio) * porcentaje
+        
         canvas.setFillColor(colors.black)
         canvas.rect(x_pos - 15, y_barra + 10, 30, 15, fill=1, stroke=0) 
-        canvas.polygon([x_pos, y_barra, x_pos - 5, y_barra + 10, x_pos + 5, y_barra + 10], fill=1, stroke=0) 
+        
+        # Crear la flecha triangulito dibujándola punto por punto (Path)
+        p = canvas.beginPath()
+        p.moveTo(x_pos, y_barra)
+        p.lineTo(x_pos - 5, y_barra + 10)
+        p.lineTo(x_pos + 5, y_barra + 10)
+        p.close()
+        canvas.drawPath(p, fill=1, stroke=0)
+        
         canvas.setFillColor(colors.white)
         canvas.setFont("Helvetica-Bold", 9)
         canvas.drawCentredString(x_pos, y_barra + 14, str(valor))
+    # ===============================
 
     dibujar_marcador(c, 135, 470, height - 340, datos['cmj'], MAX_CMJ_BARRA)
     dibujar_marcador(c, 135, 470, height - 440, datos['rsi'], MAX_RSI)
 
-    # MAPEO EXACTO Y ESCALADO PARA EL PDF
     puntos_radar = {
         "TEST MIRAELI": min((datos['sj'] / MAX_SJ) * 10, 10),
         "TEST WLST": min((datos['cmj'] / MAX_CMJ) * 10, 10),
@@ -197,7 +207,6 @@ if btn_guardar:
                 st.success("✅ Guardado en Google Sheets.")
             except: pass
 
-        # MAPEO EXACTO Y ESCALADO PARA LA PANTALLA WEB
         puntos_act_st = {
             "Fuerza Rel.": min((f_rel / MAX_F_REL) * 10, 10),
             "SJ": min((sj / MAX_SJ) * 10, 10),
