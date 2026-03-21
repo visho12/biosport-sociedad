@@ -9,19 +9,26 @@ from io import BytesIO
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import A4
 from reportlab.lib import colors
-from reportlab.lib.units import cm
-from reportlab.lib.styles import getSampleStyleSheet
-from reportlab.platypus import Paragraph
 from PIL import Image as PILImage, ImageDraw
 
-# 1. Configuración
+# ==========================================
+# ⚙️ ZONA DE BAREMOS (EL "10 PERFECTO")
+# Cambia estos números según el nivel de tus atletas
+# ==========================================
+MAX_SJ = 50.0          # 50 cm = 10 puntos en el radar
+MAX_CMJ = 60.0         # 60 cm = 10 puntos en el radar
+MAX_ABALAKOV = 70.0    # 70 cm = 10 puntos en el radar
+MAX_F_REL = 50.0       # 50 N/kg = 10 puntos en el radar
+MAX_RSI = 3.0          # 3.0 = Máximo en la barra de RSI
+MAX_CMJ_BARRA = 80.0   # 80 cm = Máximo en la barra de CMJ del PDF
+# ==========================================
+
 st.set_page_config(page_title="Bio Sport Pro", page_icon="⚡", layout="centered")
 
-# --- MEMORIA DE LA APP ---
 if "informe_actual" not in st.session_state:
     st.session_state.informe_actual = None
 
-# --- CONEXIÓN Y FUNCIONES ---
+# --- CONEXIÓN A SHEETS ---
 @st.cache_resource
 def conectar_sheets():
     scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
@@ -29,329 +36,205 @@ def conectar_sheets():
         creds_info = json.loads(st.secrets["google_credentials"], strict=False)
         creds = Credentials.from_service_account_info(creds_info, scopes=scopes)
         return gspread.authorize(creds)
-    except:
-        return None
+    except: return None
 
-# Funciones Visuales para Streamlit
+# --- FUNCIONES GRÁFICAS (STREAMLIT) ---
 def crear_velocimetro(titulo, valor, min_val, max_val, z_roja, z_ama, z_ver):
     fig = go.Figure(go.Indicator(
-        mode = "gauge+number", value = valor,
-        title = {'text': titulo, 'font': {'size': 16}},
+        mode = "gauge+number", value = valor, title = {'text': titulo, 'font': {'size': 14}},
         gauge = {'axis': {'range': [min_val, max_val]}, 'bar': {'color': "black"},
                  'steps': [{'range': z_roja, 'color': "#ff4b4b"}, {'range': z_ama, 'color': "#ffa500"}, {'range': z_ver, 'color': "#00cc96"}]}
     ))
-    fig.update_layout(height=220, margin=dict(l=30, r=30, t=50, b=20))
+    fig.update_layout(height=200, margin=dict(l=20, r=20, t=30, b=10))
     return fig
 
-def crear_radar_streamlit(puntos_actual, puntos_previo=None):
+def crear_radar_streamlit(puntos_actual):
     categories = list(puntos_actual.keys())
     fig = go.Figure()
     val_act = list(puntos_actual.values())
     val_act += val_act[:1]
     fig.add_trace(go.Scatterpolar(r=val_act, theta=categories + [categories[0]], fill='toself', name='Actual', line_color='#1E90FF'))
-    if puntos_previo:
-        val_prev = list(puntos_previo.values())
-        val_prev += val_prev[:1]
-        fig.add_trace(go.Scatterpolar(r=val_prev, theta=categories + [categories[0]], fill='toself', name='Anterior', line_color='rgba(128, 128, 128, 0.4)'))
-    fig.update_layout(polar=dict(radialaxis=dict(visible=True, range=[0, 10])), showlegend=True, height=400)
+    fig.update_layout(polar=dict(radialaxis=dict(visible=True, range=[0, 10])), showlegend=False, height=350)
     return fig
 
-# --- FUNCIONES PARA GENERAR EL PDF ESTILO IMAGEN ---
-def dibujar_grafico_barra_color(draw, x, y, ancho, alto, titulo, valor, max_valor):
-    colores_barra = [(colors.red, 0, 20), (colors.orange, 20, 40), (colors.yellow, 40, 50), (colors.lightgreen, 50, 70), (colors.darkgreen, 70, 100)]
-    for color, inicio, fin in colores_barra:
-        x_inicio = x + (inicio / 100) * ancho
-        x_fin = x + (fin / 100) * ancho
-        pil_color = (int(color.red * 255), int(color.green * 255), int(color.blue * 255))
-        draw.rectangle([x_inicio, y, x_fin, y + alto], fill=pil_color)
-
-    pos_x = x + (valor / max_valor) * ancho
-    draw.polygon([pos_x, y - 5, pos_x - 5, y - 15, pos_x + 5, y - 15], fill=(0, 0, 139))
-    draw.text((pos_x + 10, y - 15), str(valor), fill="black")
-    draw.text((x, y + alto + 5), titulo, fill="black")
-
-def dibujar_grafico_arana(draw, x_centro, y_centro, radio_max, puntos_actual, etiquetas):
+# --- MAGIA DEL PDF CON TU PLANTILLA ---
+def dibujar_arana_png(puntos, etiquetas):
+    size = 400
+    img = PILImage.new('RGBA', (size, size), (255, 255, 255, 0))
+    draw = ImageDraw.Draw(img)
+    x_c, y_c = size//2, size//2
+    radio_max = 130
     num_puntos = len(etiquetas)
-    colores_leyenda = [(colors.red, "LIMITADO"), (colors.orange, "REGULAR"), (colors.lightgreen, "ÓPTIMO"), (colors.darkgreen, "SUPERIOR")]
     
-    for i, (color, _) in enumerate(colores_leyenda):
-        pil_color = (int(color.red * 255), int(color.green * 255), int(color.blue * 255))
-        puntos_poligono = []
+    colores = [(255,0,0), (255,165,0), (0,255,0)] # Rojo, Naranja, Verde
+    for i, color in enumerate(colores):
+        poligono = []
         for j in range(num_puntos):
             angulo = j * (2 * 3.14159 / num_puntos) - 3.14159 / 2
-            radio = (radio_max / 4) * (i + 1)
-            px = x_centro + radio * PILImage.math.cos(angulo)
-            py = y_centro + radio * PILImage.math.sin(angulo)
-            puntos_poligono.append((px, py))
-        draw.polygon(puntos_poligono, outline=pil_color)
+            radio = (radio_max / 3) * (i + 1)
+            px = x_c + radio * PILImage.math.cos(angulo)
+            py = y_c + radio * PILImage.math.sin(angulo)
+            poligono.append((px, py))
+        draw.polygon(poligono, outline=color, width=2)
 
-    puntos_jugador = []
-    for j, (etiqueta, valor) in enumerate(puntos_actual.items()):
+    poligono_jugador = []
+    for j, (etiqueta, valor) in enumerate(puntos.items()):
         angulo = j * (2 * 3.14159 / num_puntos) - 3.14159 / 2
         radio = (float(valor) / 10) * radio_max
-        px = x_centro + radio * PILImage.math.cos(angulo)
-        py = y_centro + radio * PILImage.math.sin(angulo)
-        puntos_jugador.append((px, py))
-    draw.polygon(puntos_jugador, outline=(30, 144, 255), fill=(30, 144, 255, 100))
+        px = x_c + radio * PILImage.math.cos(angulo)
+        py = y_c + radio * PILImage.math.sin(angulo)
+        poligono_jugador.append((px, py))
+    draw.polygon(poligono_jugador, outline=(30, 144, 255, 255), fill=(30, 144, 255, 120), width=3)
+    
+    temp_path = "radar_temp.png"
+    img.save(temp_path)
+    return temp_path
 
-    for j, etiqueta in enumerate(etiquetas):
-        angulo = j * (2 * 3.14159 / num_puntos) - 3.14159 / 2
-        px = x_centro + (radio_max + 10) * PILImage.math.cos(angulo)
-        py = y_centro + (radio_max + 10) * PILImage.math.sin(angulo)
-        draw.text((px - 20, py), etiqueta, fill="black")
-
-def generar_pdf_estilo_imagen(datos, puntos_radar, logo_path):
+def generar_pdf_plantilla(datos):
     buffer = BytesIO()
     c = canvas.Canvas(buffer, pagesize=A4)
-    width, height = A4
-    styles = getSampleStyleSheet()
-
-    # --- ENCABEZADO ---
+    width, height = A4 
+    
     try:
-        img_logo = PILImage.new('RGBA', (100, 100), (255, 255, 255, 0))
-        draw_logo = ImageDraw.Draw(img_logo)
-        draw_logo.polygon([(50, 0), (93, 25), (93, 75), (50, 100), (7, 75), (7, 25)], outline=(0, 0, 139), fill=(30, 144, 255))
-        draw_logo.text((25, 30), "BIO", fill="white", font_size=20)
-        draw_logo.text((15, 60), "SPORT", fill="white", font_size=16)
+        c.drawImage("plantilla.jpg", 0, 0, width=width, height=height)
+    except:
+        return None 
         
-        logo_temp_path = "logo_temp.png"
-        img_logo.save(logo_temp_path)
-        c.drawImage(logo_temp_path, 1 * cm, height - 3 * cm, width=2*cm, height=2*cm)
-    except: pass
-
-    c.setFont("Helvetica-Bold", 16)
-    c.drawString(4 * cm, height - 1.5 * cm, "INFORME DE EVALUACIÓN")
-    c.setFont("Helvetica", 10)
-    c.drawString(4 * cm, height - 2 * cm, "EVALUADOR: Bio Sport Performance")
-    
-    c.setFillColor(colors.lightgrey)
-    c.circle(width - 3 * cm, height - 2.5 * cm, 1 * cm, fill=1, stroke=0)
-    c.setFillColor(colors.black)
-    c.circle(width - 3 * cm, height - 2 * cm, 0.5 * cm, fill=1, stroke=0)
-    
     c.setFont("Helvetica-Bold", 12)
-    c.drawCentredString(width - 3 * cm, height - 4 * cm, str(datos['nombre']))
-    c.setFillColor(colors.darkblue)
-    c.rect(width - 4.5 * cm, height - 4.6 * cm, 3 * cm, 0.5 * cm, fill=1, stroke=0)
+    c.setFillColor(colors.black)
+    c.drawCentredString(485, height - 150, str(datos['nombre']).upper())
+    c.setFont("Helvetica-Bold", 10)
     c.setFillColor(colors.white)
-    c.drawCentredString(width - 3 * cm, height - 4.5 * cm, str(datos.get('deporte', 'ATLETA')).upper())
-    c.setFillColor(colors.black)
-
-    # --- SECCIÓN DE PERFIL ---
-    y_perfil = height - 5 * cm
-    def dibujar_recuadro_dato(canv, x, y, titulo, valor):
-        canv.setFillColor(colors.darkblue)
-        canv.rect(x, y, 3 * cm, 0.6 * cm, fill=1, stroke=0)
-        canv.setFillColor(colors.white)
-        canv.drawCentredString(x + 1.5 * cm, y + 0.1 * cm, titulo)
-        canv.setFillColor(colors.white)
-        canv.rect(x + 3.2 * cm, y, 2.5 * cm, 0.6 * cm, fill=1, stroke=1)
-        canv.setFillColor(colors.black)
-        canv.drawCentredString(x + 4.45 * cm, y + 0.1 * cm, str(valor))
-
-    dibujar_recuadro_dato(c, 1 * cm, y_perfil, "EDAD", f"{datos['edad']} años")
-    dibujar_recuadro_dato(c, 1 * cm, y_perfil - 0.8 * cm, "PESO", f"{datos['peso']} kg")
-    dibujar_recuadro_dato(c, 1 * cm, y_perfil - 1.6 * cm, "FECHA", str(datos['fecha']))
-
-    c.line(1 * cm, height - 7.5 * cm, width - 1 * cm, height - 7.5 * cm)
-
-    # --- SECCIÓN RENDIMIENTO ---
-    c.setFont("Helvetica-Bold", 14)
-    c.setFillColor(colors.black)
-    c.rect(1 * cm, height - 8.2 * cm, 4 * cm, 0.6 * cm, fill=1, stroke=0)
-    c.setFillColor(colors.white)
-    c.drawCentredString(3 * cm, height - 8.1 * cm, "RENDIMIENTO")
-    c.setFillColor(colors.black)
-
-    img_barras = PILImage.new('RGBA', (int(18 * cm), int(6 * cm)), (255, 255, 255, 0))
-    draw_barras = ImageDraw.Draw(img_barras)
+    c.drawCentredString(485, height - 170, str(datos['deporte']).upper())
     
-    dibujar_grafico_barra_color(draw_barras, 50, 50, int(14 * cm), 20, "CMJ (Potencia Salto)", datos['cmj'], 80)
-    dibujar_grafico_barra_color(draw_barras, 50, 130, int(14 * cm), 20, "FUERZA RELATIVA (IMTP/Kg)", datos['f_rel'], 60)
+    c.setFont("Helvetica-Bold", 11)
+    c.drawString(295, height - 110, f"{datos['edad']} años")
+    c.drawString(295, height - 153, f"{datos['peso']} kg")
+    c.drawString(295, height - 195, f"{datos['estatura']} m")
     
-    barras_temp_path = "barras_temp.png"
-    img_barras.save(barras_temp_path)
-    c.drawImage(barras_temp_path, 1 * cm, height - 12.5 * cm, width=18*cm, height=4*cm)
+    def dibujar_marcador(canvas, x_inicio, x_fin, y_barra, valor, valor_max):
+        porcentaje = min(max(valor / valor_max, 0), 1)
+        x_pos = x_inicio + (x_fin - x_inicio) * porcentaje
+        canvas.setFillColor(colors.black)
+        canvas.rect(x_pos - 15, y_barra + 10, 30, 15, fill=1, stroke=0) 
+        canvas.polygon([x_pos, y_barra, x_pos - 5, y_barra + 10, x_pos + 5, y_barra + 10], fill=1, stroke=0) 
+        canvas.setFillColor(colors.white)
+        canvas.setFont("Helvetica-Bold", 9)
+        canvas.drawCentredString(x_pos, y_barra + 14, str(valor))
 
-    # --- SECCIÓN FACTOR DE RIESGO ---
-    c.line(1 * cm, height - 13.5 * cm, width - 1 * cm, height - 13.5 * cm)
-    c.setFont("Helvetica-Bold", 14)
-    c.setFillColor(colors.black)
-    c.rect(1 * cm, height - 14.2 * cm, 8 * cm, 0.6 * cm, fill=1, stroke=0)
-    c.setFillColor(colors.white)
-    c.drawCentredString(5 * cm, height - 14.1 * cm, "PERFIL BIOMECÁNICO")
-    c.setFillColor(colors.black)
+    dibujar_marcador(c, 135, 470, height - 340, datos['cmj'], MAX_CMJ_BARRA)
+    dibujar_marcador(c, 135, 470, height - 440, datos['rsi'], MAX_RSI)
 
-    img_arana = PILImage.new('RGBA', (int(10 * cm), int(10 * cm)), (255, 255, 255, 0))
-    draw_arana = ImageDraw.Draw(img_arana)
-    
-    # --- 4. PEGAR EL GRÁFICO DE ARAÑA ---
-    
-    # Baremos de Excelencia (El "10 perfecto")
-    MAX_SJ = 50.0        # 50 cm es un salto SJ de élite
-    MAX_CMJ = 60.0       # 60 cm es un CMJ de élite
-    MAX_ABALAKOV = 70.0  # 70 cm es un Abalakov de élite
-    MAX_F_REL = 50.0     # 50 N/kg de fuerza relativa es excelente
-
-    # Mapeo de datos con la escala real
+    # MAPEO EXACTO Y ESCALADO PARA EL PDF
     puntos_radar = {
         "TEST MIRAELI": min((datos['sj'] / MAX_SJ) * 10, 10),
         "TEST WLST": min((datos['cmj'] / MAX_CMJ) * 10, 10),
         "TEST BKO": min((datos['abalakov'] / MAX_ABALAKOV) * 10, 10),
         "TEST PIRAMIDAL": min((datos['f_rel'] / MAX_F_REL) * 10, 10),
-        
-        # Fórmula de movilidad: 1.0 es perfecto (10 pts). 
-        # Cada 0.1 de desbalance le resta 2 puntos.
-        "MOVILIDAD": max(0, 10 - abs(1 - datos['ratio']) * 20)
+        "MOVILIDAD": round(max(0, 10 - abs(1 - datos['ratio']) * 20), 1)
     }
-    
     ruta_radar = dibujar_arana_png(puntos_radar, list(puntos_radar.keys()))
-
-    dibujar_grafico_arana(draw_arana, int(5 * cm), int(5 * cm), int(3.5 * cm), puntos_radar_imagen, etiquetas_radar)
     
-    arana_temp_path = "arana_temp.png"
-    img_arana.save(arana_temp_path)
-    c.drawImage(arana_temp_path, 1 * cm, height - 20 * cm, width=8*cm, height=8*cm)
-    
-    # --- AQUÍ ESTÁ LA SOLUCIÓN AL ERROR DE LA LEYENDA ---
-    colores_leyenda_pdf = [
-        (colors.red, "DÉFICIT / ALERTA"),
-        (colors.orange, "REGULAR"),
-        (colors.lightgreen, "ÓPTIMO"),
-        (colors.darkgreen, "SUPERIOR")
-    ]
-    y_leyenda = height - 16 * cm
-    x_leyenda = 11 * cm
-    c.setFont("Helvetica", 10)
-    for color, texto in colores_leyenda_pdf:
-        c.setFillColor(color)
-        c.rect(x_leyenda, y_leyenda, 0.4 * cm, 0.4 * cm, fill=1, stroke=0)
-        c.setFillColor(colors.black)
-        c.drawString(x_leyenda + 0.6 * cm, y_leyenda + 0.1 * cm, texto)
-        y_leyenda -= 0.8 * cm
-
-    # --- OBSERVACIONES ---
-    st.markdown("---")
-    obs_style = styles["BodyText"]
-    obs_text = str(datos['notas']) if datos['notas'] else "Sin observaciones en esta sesión."
-    p_obs = Paragraph(f"<b>Observaciones:</b><br/>{obs_text}", obs_style)
-    p_obs.wrapOn(c, width - 2 * cm, 4 * cm)
-    p_obs.drawOn(c, 1 * cm, height - 25 * cm)
-
+    c.drawImage(ruta_radar, 80, height - 760, width=180, height=180, mask='auto')
     c.save()
     buffer.seek(0)
     return buffer
 
-# --- CARGAR HISTORIAL ---
-cliente = conectar_sheets()
-data_historica = pd.DataFrame()
-lista_atletas = ["Nuevo Atleta"]
-
-if cliente:
-    try:
-        hoja = cliente.open("BioSport_BD").sheet1
-        registros = hoja.get_all_records()
-        if registros:
-            data_historica = pd.DataFrame(registros)
-            data_historica.columns = [str(c).strip() for c in data_historica.columns]
-            if 'Nombre' in data_historica.columns:
-                lista_unique = sorted(data_historica['Nombre'].unique().tolist())
-                lista_atletas += [n for n in lista_unique if n]
-    except:
-        pass
-
-# --- INTERFAZ ---
-st.image("logo.png", width=180) 
+# --- INTERFAZ STREAMLIT ---
+st.image("logo.png", width=120) 
 st.title("⚡ Evaluación Bio Sport")
 
-atleta_sel = st.selectbox("🔍 Buscar Atleta", lista_atletas)
-
 st.write("### 📝 Datos del Atleta")
-nombre = st.text_input("Nombre completo", value="" if atleta_sel == "Nuevo Atleta" else atleta_sel)
-
-c1, c2 = st.columns(2)
+c1, c2, c3 = st.columns(3)
 with c1:
-    peso = st.number_input("Peso (kg)", min_value=0.0, step=0.1, format="%.1f")
-    imtp = st.number_input("IMTP (N)", step=10.0)
-    sj = st.number_input("SJ (cm)", step=0.1, format="%.1f")
-    deporte = st.text_input("Deporte / Posición")
+    nombre = st.text_input("Nombre")
+    deporte = st.text_input("Deporte / Posición", value="Fútbol")
 with c2:
-    cmj = st.number_input("CMJ (cm)", step=0.1, format="%.1f")
-    abalakov = st.number_input("Abalakov (cm)", step=0.1, format="%.1f")
+    peso = st.number_input("Peso (kg)", min_value=0.0, step=0.1, format="%.1f")
     edad = st.number_input("Edad", min_value=0, step=1)
+with c3:
+    estatura = st.number_input("Estatura (m)", value=1.75, step=0.01)
 
-st.write("### ⚖️ Dinamometría y Notas")
-ca, cb, cc = st.columns([1,1,2])
+st.write("### 🚀 Pruebas de Rendimiento")
+f1, f2, f3 = st.columns(3)
+with f1:
+    imtp = st.number_input("IMTP (Fuerza N)", step=10.0)
+    sj = st.number_input("SJ (cm)", step=0.1)
+with f2:
+    cmj = st.number_input("CMJ (cm)", step=0.1)
+    abalakov = st.number_input("Abalakov (cm)", step=0.1)
+with f3:
+    rsi = st.number_input("RSI Modificado", step=0.01)
+
+st.write("### ⚖️ Dinamometría de Cadera")
+ca, cb = st.columns(2)
 with ca: aduc = st.number_input("Aductores (N)", step=1.0)
 with cb: abduc = st.number_input("Abductores (N)", step=1.0)
-with cc: notas = st.text_area("Notas / Observaciones")
 
 st.divider()
 confirmar = st.toggle("Confirmar que los datos son correctos")
-btn_guardar = st.button("📊 GUARDAR Y GENERAR INFORME PDF", type="primary", use_container_width=True, disabled=not confirmar)
+btn_guardar = st.button("📊 GUARDAR Y GENERAR INFORME", type="primary", use_container_width=True, disabled=not confirmar)
 
 # --- PROCESAMIENTO ---
 if btn_guardar:
     if nombre and peso > 0:
         f_rel = round(imtp / peso, 1)
-        ratio = round(aduc / abduc, 1) if abduc > 0 else 0
-        fecha_actual = datetime.now().strftime("%d/%m/%Y")
-        
-        est_fuerza = "Óptimo" if f_rel > 40 else "Medio" if f_rel >= 30 else "Déficit"
-        est_ratio = "Simetría" if 0.9 <= ratio <= 1.1 else "Precaución" if 0.8 <= ratio <= 1.2 else "Desbalance"
+        ratio = round(aduc / abduc, 2) if abduc > 0 else 0
+        fecha = datetime.now().strftime("%d/%m/%Y")
 
-        eval_previa = None
-        if not data_historica.empty and 'Nombre' in data_historica.columns:
-            anteriores = data_historica[data_historica['Nombre'] == nombre]
-            if not anteriores.empty:
-                eval_previa = anteriores.iloc[-1].to_dict()
+        datos_eval = {
+            "nombre": nombre, "edad": edad, "peso": peso, "estatura": estatura, 
+            "deporte": deporte, "fecha": fecha, "cmj": cmj, "sj": sj, 
+            "abalakov": abalakov, "imtp": imtp, "f_rel": f_rel, 
+            "rsi": rsi, "ratio": ratio
+        }
 
-        try:
-            hoja = cliente.open("BioSport_BD").sheet1
-            hoja.append_row([fecha_actual, nombre, edad, peso, deporte, imtp, f_rel, est_fuerza, sj, cmj, abalakov, aduc, abduc, ratio, est_ratio, notas])
-            
-            def norm_st(v, esc): return round(min((v/esc)*10, 10), 1)
-            puntos_act_st = {"Fuerza Rel.": norm_st(f_rel, 4.5), "SJ": norm_st(sj, 5), "CMJ": norm_st(cmj, 6), "Abalakov": norm_st(abalakov, 7), "Salud Cadera": round(max(0, 10 - abs(1-ratio)*10), 1)}
-            
-            puntos_prev_st = None
-            if eval_previa:
-                try: puntos_prev_st = {"Fuerza Rel.": norm_st(eval_previa.get('Fuerza_Relativa', 0), 4.5), "SJ": norm_st(eval_previa.get('SJ', 0), 5), "CMJ": norm_st(eval_previa.get('CMJ', 0), 6), "Abalakov": norm_st(eval_previa.get('Abalakov', 0), 7), "Salud Cadera": round(max(0, 10 - abs(1-float(eval_previa.get('Ratio', 1)))*10), 1)}
-                except: pass
+        cliente = conectar_sheets()
+        if cliente:
+            try:
+                hoja = cliente.open("BioSport_BD").sheet1
+                hoja.append_row([fecha, nombre, edad, peso, estatura, deporte, imtp, f_rel, sj, cmj, abalakov, rsi, aduc, abduc, ratio])
+                st.success("✅ Guardado en Google Sheets.")
+            except: pass
 
-            with st.spinner("Generando informe PDF profesional..."):
-                buffer_pdf = generar_pdf_estilo_imagen({
-                    "fecha": fecha_actual, "nombre": nombre, "peso": peso, "imtp": imtp,
-                    "f_rel": f_rel, "est_fuerza": est_fuerza, "sj": sj, "cmj": cmj, "abalakov": abalakov,
-                    "aduc": aduc, "abduc": abduc, "ratio": ratio, "est_ratio": est_ratio,
-                    "notas": notas, "edad": edad, "deporte": deporte
-                }, puntos_act_st, "logo.png")
+        # MAPEO EXACTO Y ESCALADO PARA LA PANTALLA WEB
+        puntos_act_st = {
+            "Fuerza Rel.": min((f_rel / MAX_F_REL) * 10, 10),
+            "SJ": min((sj / MAX_SJ) * 10, 10),
+            "CMJ": min((cmj / MAX_CMJ) * 10, 10),
+            "Abalakov": min((abalakov / MAX_ABALAKOV) * 10, 10),
+            "Cadera": round(max(0, 10 - abs(1 - ratio) * 20), 1)
+        }
 
+        with st.spinner("Ensamblando PDF con la plantilla..."):
+            pdf_buffer = generar_pdf_plantilla(datos_eval)
+
+        if pdf_buffer:
             st.session_state.informe_actual = {
-                "fecha": fecha_actual, "nombre": nombre, "f_rel": f_rel, "ratio": ratio,
-                "radar_actual": puntos_act_st, "radar_previo": puntos_prev_st,
-                "pdf_buffer": buffer_pdf
+                "datos": datos_eval, "pdf": pdf_buffer, "radar_web": puntos_act_st
             }
-        except Exception as e:
-            st.error(f"Error al guardar o generar PDF: {e}")
+        else:
+            st.error("❌ No se encontró 'plantilla.jpg' en GitHub. Súbela para generar el PDF.")
     else:
         st.error("⚠️ Falta Nombre o Peso.")
 
+# --- MOSTRAR BOTÓN DE DESCARGA Y VISTA WEB ---
 if st.session_state.informe_actual:
-    datos = st.session_state.informe_actual
+    d = st.session_state.informe_actual["datos"]
+    radar_web = st.session_state.informe_actual["radar_web"]
     
     st.markdown("---")
-    st.success(f"✅ ¡Evaluación de {datos['nombre']} guardada y PDF generado!")
-    st.header(f"📊 Vista Previa de Rendimiento")
+    st.header(f"📈 Vista Previa: {d['nombre']}")
     
-    col_v1, col_v2 = st.columns(2)
-    with col_v1: st.plotly_chart(crear_velocimetro("Fuerza Relativa (N/kg)", datos['f_rel'], 0, 60, [0, 30], [30, 40], [40, 60]), use_container_width=True)
-    with col_v2: st.plotly_chart(crear_velocimetro("Ratio Cadera", datos['ratio'], 0, 2, [0, 0.8], [0.8, 0.9], [0.9, 1.1]), use_container_width=True)
+    col1, col2 = st.columns(2)
+    with col1: st.plotly_chart(crear_velocimetro("CMJ", d['cmj'], 0, MAX_CMJ_BARRA, [0,30], [30,40], [40,MAX_CMJ_BARRA]), use_container_width=True)
+    with col2: st.plotly_chart(crear_velocimetro("RSI", d['rsi'], 0, MAX_RSI, [0,1], [1,1.5], [1.5,MAX_RSI]), use_container_width=True)
     
-    st.plotly_chart(crear_radar_streamlit(datos['radar_actual'], datos['radar_previo']), use_container_width=True)
+    st.plotly_chart(crear_radar_streamlit(radar_web), use_container_width=True)
 
     st.download_button(
-        label="📥 DESCARGAR INFORME PDF PROFESIONAL",
-        data=datos['pdf_buffer'],
-        file_name=f"BioSport_Informe_{datos['nombre'].replace(' ', '_')}.pdf",
+        label="📥 DESCARGAR INFORME OFICIAL (PDF)",
+        data=st.session_state.informe_actual["pdf"],
+        file_name=f"Informe_{d['nombre'].replace(' ', '_')}.pdf",
         mime="application/pdf"
     )
