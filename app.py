@@ -1,35 +1,70 @@
-"""
-Bio Sport Pro — Evaluación Deportiva de Alto Rendimiento
-Versión 2.0 — Refactorizado y mejorado
-"""
+# ─────────────────────────────────────────────────────────────
+# BAREMOS CIENTÍFICOS DINÁMICOS (Valores Máximos Élite de Referencia)
+# Referencias: Bosco (1983), Martínez López (2002), Comfort (2014)
+# ─────────────────────────────────────────────────────────────
+BAREMOS_DEPORTIVOS = {
+    "Fútbol": {
+        "SJ": 46.0,       # Umbral neuromuscular alto en aceleración lineal
+        "CMJ": 56.0,      # Capacidad de desaceleración y salto de cabeza
+        "Abalakov": 66.0, # Coordinación general tren superior
+        "F_Rel": 35.0,    # N/Kg. Fuerza pico relativa en IMTP (Comfort et al.)
+        "RSI": 2.6        # Reactividad en cambios de dirección
+    },
+    "Básquetbol": {
+        "SJ": 55.0,
+        "CMJ": 68.0,      # Alta demanda de salto vertical reactivo
+        "Abalakov": 78.0,
+        "F_Rel": 35.0,
+        "RSI": 3.0,       # Rigidez tendinosa (stiffness) optimizada
+    },
+    "Voleibol": {
+        "SJ": 60.0,       # Máximo exponente pliométrico concéntrico
+        "CMJ": 75.0,      # Requisito para bloqueo y remate élite
+        "Abalakov": 88.0, # Uso masivo del ciclo estiramiento-acortamiento con brazos
+        "F_Rel": 32.0,
+        "RSI": 3.2,
+    },
+    "General / Recreacional": {
+        "SJ": 40.0,
+        "CMJ": 48.0,
+        "Abalakov": 58.0,
+        "F_Rel": 28.0,
+        "RSI": 2.2,
+    }
+}
 
-import streamlit as st
-import gspread
-from google.oauth2.service_account import Credentials
-import json
-import pandas as pd
-from datetime import datetime
-import plotly.graph_objects as go
-import plotly.express as px
-from io import BytesIO
-from reportlab.pdfgen import canvas
-from reportlab.lib.pagesizes import A4
-from reportlab.lib import colors
-from reportlab.platypus import Table, TableStyle
-from PIL import Image as PILImage, ImageDraw
-import math
-import os
+# Diccionario auxiliar para las etiquetas y unidades en pantalla
+METRICAS_INFO = {
+    "SJ": {"unidad": "cm", "label": "Squat Jump"},
+    "CMJ": {"unidad": "cm", "label": "CMJ"},
+    "Abalakov": {"unidad": "cm", "label": "Abalakov"},
+    "F_Rel": {"unidad": "N/kg", "label": "Fuerza Relativa"},
+    "RSI": {"unidad": "", "label": "RSI Modificado"},
+}
 
-# ─────────────────────────────────────────────
-#  CONFIGURACIÓN DE BAREMOS (máximo = nota 10)
-# ─────────────────────────────────────────────
-BAREMOS = {
-    "SJ":        {"max": 50.0,  "unidad": "cm",  "label": "Squat Jump"},
-    "CMJ":       {"max": 60.0,  "unidad": "cm",  "label": "CMJ"},
-    "Abalakov":  {"max": 70.0,  "unidad": "cm",  "label": "Abalakov"},
-    "F_Rel":     {"max": 50.0,  "unidad": "N/kg","label": "Fuerza Relativa"},
-    "RSI":       {"max": 3.0,   "unidad": "",    "label": "RSI Modificado"},
-    "CMJ_Barra": {"max": 80.0,  "unidad": "cm",  "label": "CMJ c/Barra"},
+COLUMNAS_SHEETS = [
+    "Fecha", "Nombre", "Edad", "Peso_kg", "Estatura_m", "Deporte",
+    "IMTP_N", "F_Rel_NKg", "SJ_cm", "CMJ_cm", "Abalakov_cm",
+    "RSI_Mod", "Aduc_N", "Abduc_N", "Ratio_AdAb"
+]
+
+ALIAS_COLUMNAS = {
+    "nombre": "Nombre", "fecha": "Fecha", "deporte": "Deporte",
+    "edad": "Edad", "peso": "Peso_kg", "Peso": "Peso_kg",
+    "estatura": "Estatura_m", "Estatura": "Estatura_m",
+    "SJ": "SJ_cm", "sj": "SJ_cm",
+    "CMJ": "CMJ_cm", "cmj": "CMJ_cm",
+    "Abalakov": "Abalakov_cm", "abalakov": "Abalakov_cm",
+    "IMTP": "IMTP_N", "imtp": "IMTP_N",
+    "F_Rel": "F_Rel_NKg", "f_rel": "F_Rel_NKg",
+    "RSI": "RSI_Mod", "rsi": "RSI_Mod",
+    "Aduc": "Aduc_N", "aduc": "Aduc_N",
+    "Abduc": "Abduc_N", "abduc": "Abduc_N",
+    "Ratio": "Ratio_AdAb", "ratio": "Ratio_AdAb",
+}
+
+NUM_COLS = ["Edad","Peso_kg","Estatura_m","IMTP_N","F_Rel_NKg",
+            "SJ_cm","CMJ_cm","Abalakov_cm","RSI_Mod","Aduc_N","Abduc_N","Ratio_AdAb"]
 }
 
 RADAR_KEYS = {
@@ -330,21 +365,25 @@ def guardar_fila(cliente, fila: list) -> bool:
 
 
 # ─────────────────────────────────────────────
-#  CÁLCULOS
+# CÁLCULOS TÉCNICOS
 # ─────────────────────────────────────────────
-def calcular_puntos(sj, cmj, abalakov, f_rel, ratio_adab) -> dict:
-    """Normaliza cada métrica a escala 0-10 según los baremos."""
+def calcular_puntos(sj, cmj, abalakov, f_rel, ratio_adab, deporte) -> dict:
+    # Si el deporte ingresado no está en nuestra base de datos, usamos el perfil general
+    perfil = BAREMOS_DEPORTIVOS.get(deporte, BAREMOS_DEPORTIVOS["General / Recreacional"])
+    
     def puntuar(val, max_val):
-        return round(min((val / max_val) * 10, 10), 2) if max_val else 0
-
-    equil = round(max(0, 10 - abs(1 - ratio_adab) * 20), 1) if ratio_adab else 5.0
-
+        return round(min((float(val) / max_val) * 10, 10), 2) if max_val and float(val) > 0 else 0.0
+        
+    # Índice de simetría coxo-femoromedial (Dinamometría isométrica)
+    # Valores óptimos entre 0.9 y 1.1 para mitigar riesgo de pubalgia
+    equil = round(max(0.0, 10.0 - abs(1.0 - float(ratio_adab)) * 20.0), 1) if float(ratio_adab) > 0 else 5.0
+    
     return {
-        "Squat Jump":   puntuar(sj,       BAREMOS["SJ"]["max"]),
-        "CMJ":          puntuar(cmj,      BAREMOS["CMJ"]["max"]),
-        "Abalakov":     puntuar(abalakov, BAREMOS["Abalakov"]["max"]),
-        "F. Relativa":  puntuar(f_rel,    BAREMOS["F_Rel"]["max"]),
-        "Equilibrio":   equil,
+        "Squat Jump":  puntuar(sj,       perfil["SJ"]),
+        "CMJ":         puntuar(cmj,      perfil["CMJ"]),
+        "Abalakov":    puntuar(abalakov, perfil["Abalakov"]),
+        "F. Relativa": puntuar(f_rel,    perfil["F_Rel"]),
+        "Equilibrio":  equil,
     }
 
 
