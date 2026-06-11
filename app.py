@@ -1,6 +1,6 @@
 """
 Bio Sport Pro — Evaluación Deportiva de Alto Rendimiento
-Versión 3.2 — Guardado Híbrido, Baremos Científicos Dinámicos y Corrección UI
+Versión 3.3 — Guardado Híbrido, Baremos Dinámicos y PDF Reparado
 """
 
 import streamlit as st
@@ -25,23 +25,23 @@ from google.oauth2.service_account import Credentials
 # ─────────────────────────────────────────────────────────────
 BAREMOS_DEPORTIVOS = {
     "Fútbol": {
-        "SJ": 46.0,       # Umbral neuromuscular alto en aceleración lineal
-        "CMJ": 56.0,      # Capacidad de desaceleración y salto de cabeza
-        "Abalakov": 66.0, # Coordinación general tren superior
-        "F_Rel": 35.0,    # N/Kg. Fuerza pico relativa en IMTP (Comfort et al.)
-        "RSI": 2.6        # Reactividad en cambios de dirección
+        "SJ": 46.0,       
+        "CMJ": 56.0,      
+        "Abalakov": 66.0, 
+        "F_Rel": 35.0,    
+        "RSI": 2.6        
     },
     "Básquetbol": {
         "SJ": 55.0,
-        "CMJ": 68.0,      # Alta demanda de salto vertical reactivo
+        "CMJ": 68.0,      
         "Abalakov": 78.0,
         "F_Rel": 35.0,
-        "RSI": 3.0,       # Rigidez tendinosa (stiffness) optimizada
+        "RSI": 3.0,       
     },
     "Voleibol": {
-        "SJ": 60.0,       # Máximo exponente pliométrico concéntrico
-        "CMJ": 75.0,      # Requisito para bloqueo y remate élite
-        "Abalakov": 88.0, # Uso masivo del ciclo estiramiento-acortamiento con brazos
+        "SJ": 60.0,       
+        "CMJ": 75.0,      
+        "Abalakov": 88.0, 
         "F_Rel": 32.0,
         "RSI": 3.2,
     },
@@ -54,7 +54,6 @@ BAREMOS_DEPORTIVOS = {
     }
 }
 
-# Diccionario auxiliar para las etiquetas y unidades en pantalla
 METRICAS_INFO = {
     "SJ": {"unidad": "cm", "label": "Squat Jump"},
     "CMJ": {"unidad": "cm", "label": "CMJ"},
@@ -107,150 +106,32 @@ st.set_page_config(
 
 st.markdown("""
 <style>
-/* ── Tipografía y fondo ── */
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;900&display=swap');
-
-html, body, [class*="css"] {
-    font-family: 'Inter', sans-serif;
-}
-.stApp {
-    background: #0a0e1a;
-    color: #e8eaf0;
-}
-
-/* ── Encabezado hero ── */
-.hero-block {
-    background: linear-gradient(135deg, #0d1b2e 0%, #112240 60%, #0f3460 100%);
-    border: 1px solid #1e3a5f;
-    border-radius: 16px;
-    padding: 32px 40px;
-    margin-bottom: 28px;
-    display: flex;
-    align-items: center;
-    gap: 20px;
-}
-.hero-title {
-    font-size: 2.2rem;
-    font-weight: 900;
-    letter-spacing: -0.5px;
-    color: #ffffff;
-    margin: 0;
-}
-.hero-subtitle {
-    font-size: 0.95rem;
-    color: #7ea8d8;
-    margin: 4px 0 0 0;
-    font-weight: 400;
-}
+html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
+.stApp { background: #0a0e1a; color: #e8eaf0; }
+.hero-block { background: linear-gradient(135deg, #0d1b2e 0%, #112240 60%, #0f3460 100%); border: 1px solid #1e3a5f; border-radius: 16px; padding: 32px 40px; margin-bottom: 28px; display: flex; align-items: center; gap: 20px; }
+.hero-title { font-size: 2.2rem; font-weight: 900; letter-spacing: -0.5px; color: #ffffff; margin: 0; }
+.hero-subtitle { font-size: 0.95rem; color: #7ea8d8; margin: 4px 0 0 0; font-weight: 400; }
 .accent { color: #00d4ff; }
-
-/* ── Tarjetas de sección ── */
-.section-card {
-    background: #111827;
-    border: 1px solid #1f2d45;
-    border-radius: 12px;
-    padding: 24px 28px;
-    margin-bottom: 20px;
-}
-.section-title {
-    font-size: 0.75rem;
-    font-weight: 700;
-    letter-spacing: 2px;
-    text-transform: uppercase;
-    color: #00d4ff;
-    margin-bottom: 16px;
-}
-
-/* ── Métricas rápidas ── */
+.section-card { background: #111827; border: 1px solid #1f2d45; border-radius: 12px; padding: 24px 28px; margin-bottom: 20px; }
+.section-title { font-size: 0.75rem; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; color: #00d4ff; margin-bottom: 16px; }
 .metric-row { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 20px; }
-.metric-chip {
-    background: #1a2744;
-    border: 1px solid #2a3f6f;
-    border-radius: 10px;
-    padding: 14px 20px;
-    min-width: 130px;
-    flex: 1;
-    text-align: center;
-}
-.metric-chip .val {
-    font-size: 1.7rem;
-    font-weight: 700;
-    color: #00d4ff;
-    line-height: 1;
-}
-.metric-chip .lbl {
-    font-size: 0.72rem;
-    color: #8899bb;
-    margin-top: 4px;
-    font-weight: 600;
-    letter-spacing: 1px;
-    text-transform: uppercase;
-}
-
-/* ── Indicador de nota global ── */
-.score-badge {
-    background: linear-gradient(135deg, #0f3460, #1a4f8a);
-    border: 2px solid #00d4ff;
-    border-radius: 50%;
-    width: 110px; height: 110px;
-    display: flex; flex-direction: column;
-    align-items: center; justify-content: center;
-    margin: 0 auto 20px auto;
-}
+.metric-chip { background: #1a2744; border: 1px solid #2a3f6f; border-radius: 10px; padding: 14px 20px; min-width: 130px; flex: 1; text-align: center; }
+.metric-chip .val { font-size: 1.7rem; font-weight: 700; color: #00d4ff; line-height: 1; }
+.metric-chip .lbl { font-size: 0.72rem; color: #8899bb; margin-top: 4px; font-weight: 600; letter-spacing: 1px; text-transform: uppercase; }
+.score-badge { background: linear-gradient(135deg, #0f3460, #1a4f8a); border: 2px solid #00d4ff; border-radius: 50%; width: 110px; height: 110px; display: flex; flex-direction: column; align-items: center; justify-content: center; margin: 0 auto 20px auto; }
 .score-badge .num { font-size: 2.4rem; font-weight: 900; color: #fff; line-height: 1; }
 .score-badge .denom { font-size: 0.8rem; color: #7ea8d8; }
-
-/* ── Botón primario ── */
-div.stButton > button[kind="primary"] {
-    background: linear-gradient(90deg, #0066cc, #00aaff);
-    color: white;
-    border: none;
-    border-radius: 10px;
-    font-weight: 700;
-    letter-spacing: 0.5px;
-    font-size: 0.95rem;
-    padding: 0.65rem 2rem;
-    transition: opacity 0.2s;
-}
+div.stButton > button[kind="primary"] { background: linear-gradient(90deg, #0066cc, #00aaff); color: white; border: none; border-radius: 10px; font-weight: 700; letter-spacing: 0.5px; font-size: 0.95rem; padding: 0.65rem 2rem; transition: opacity 0.2s; }
 div.stButton > button[kind="primary"]:hover { opacity: 0.88; }
-
-/* ── Inputs ── */
-.stTextInput input, .stNumberInput input, .stSelectbox > div {
-    background: #1a2035 !important;
-    border: 1px solid #2a3f6f !important;
-    color: #e8eaf0 !important;
-    border-radius: 8px !important;
-}
-
-/* ── Tabs ── */
-.stTabs [data-baseweb="tab-list"] {
-    background: #111827;
-    border-radius: 10px;
-    padding: 4px;
-    gap: 4px;
-    border: 1px solid #1f2d45;
-}
-.stTabs [data-baseweb="tab"] {
-    background: transparent;
-    color: #8899bb;
-    border-radius: 8px;
-    font-weight: 600;
-    font-size: 0.85rem;
-}
-.stTabs [aria-selected="true"] {
-    background: #1a2744 !important;
-    color: #00d4ff !important;
-}
-
-/* ── Alertas ── */
+.stTextInput input, .stNumberInput input, .stSelectbox > div { background: #1a2035 !important; border: 1px solid #2a3f6f !important; color: #e8eaf0 !important; border-radius: 8px !important; }
+.stTabs [data-baseweb="tab-list"] { background: #111827; border-radius: 10px; padding: 4px; gap: 4px; border: 1px solid #1f2d45; }
+.stTabs [data-baseweb="tab"] { background: transparent; color: #8899bb; border-radius: 8px; font-weight: 600; font-size: 0.85rem; }
+.stTabs [aria-selected="true"] { background: #1a2744 !important; color: #00d4ff !important; }
 .stSuccess { background: #0d2a1a !important; border-color: #00cc88 !important; }
 .stError   { background: #2a0d0d !important; border-color: #ff4b4b !important; }
 .stWarning { background: #2a1e0d !important; border-color: #ffa500 !important; }
-
-/* ── Tabla de atletas ── */
 .stDataFrame { border-radius: 10px; overflow: hidden; }
-
-/* ── Divider ── */
 hr { border-color: #1f2d45 !important; }
 </style>
 """, unsafe_allow_html=True)
@@ -285,10 +166,8 @@ def conectar_sheets():
     except Exception:
         return None
 
-
 @st.cache_data(ttl=120, show_spinner=False)
 def cargar_historial(_cliente):
-    """Retorna DataFrame con todo el historial; vacío si falla."""
     if _cliente is None:
         return pd.DataFrame()
     try:
@@ -300,40 +179,35 @@ def cargar_historial(_cliente):
         df.columns = [str(c).strip() for c in df.columns]
 
         ALIAS = {
-            "nombre":    "Nombre", "Nombre":    "Nombre",
-            "fecha":     "Fecha",  "Fecha":     "Fecha",
-            "deporte":   "Deporte","Deporte":   "Deporte",
-            "edad":      "Edad",   "Edad":      "Edad",
-            "peso":      "Peso_kg","Peso":      "Peso_kg", "Peso_kg":   "Peso_kg",
-            "estatura":  "Estatura_m", "Estatura":  "Estatura_m", "Estatura_m":"Estatura_m",
-            "SJ":        "SJ_cm", "sj":        "SJ_cm", "SJ_cm":     "SJ_cm",
-            "CMJ":       "CMJ_cm", "cmj":       "CMJ_cm", "CMJ_cm":    "CMJ_cm",
-            "Abalakov":  "Abalakov_cm", "abalakov":  "Abalakov_cm", "Abalakov_cm":"Abalakov_cm",
-            "IMTP":      "IMTP_N", "imtp":      "IMTP_N", "IMTP_N":    "IMTP_N",
-            "F_Rel":     "F_Rel_NKg", "f_rel":     "F_Rel_NKg", "F_Rel_NKg": "F_Rel_NKg",
-            "RSI":       "RSI_Mod", "rsi":       "RSI_Mod", "RSI_Mod":   "RSI_Mod",
-            "Aduc":      "Aduc_N", "aduc":      "Aduc_N", "Aduc_N":    "Aduc_N",
-            "Abduc":     "Abduc_N", "abduc":     "Abduc_N", "Abduc_N":   "Abduc_N",
-            "Ratio":     "Ratio_AdAb", "ratio":     "Ratio_AdAb", "Ratio_AdAb":"Ratio_AdAb",
+            "nombre": "Nombre", "Nombre": "Nombre", "fecha": "Fecha",  "Fecha": "Fecha",
+            "deporte": "Deporte","Deporte": "Deporte", "edad": "Edad",   "Edad": "Edad",
+            "peso": "Peso_kg","Peso": "Peso_kg", "Peso_kg": "Peso_kg",
+            "estatura": "Estatura_m", "Estatura": "Estatura_m", "Estatura_m":"Estatura_m",
+            "SJ": "SJ_cm", "sj": "SJ_cm", "SJ_cm": "SJ_cm",
+            "CMJ": "CMJ_cm", "cmj": "CMJ_cm", "CMJ_cm": "CMJ_cm",
+            "Abalakov": "Abalakov_cm", "abalakov": "Abalakov_cm", "Abalakov_cm":"Abalakov_cm",
+            "IMTP": "IMTP_N", "imtp": "IMTP_N", "IMTP_N": "IMTP_N",
+            "F_Rel": "F_Rel_NKg", "f_rel": "F_Rel_NKg", "F_Rel_NKg": "F_Rel_NKg",
+            "RSI": "RSI_Mod", "rsi": "RSI_Mod", "RSI_Mod": "RSI_Mod",
+            "Aduc": "Aduc_N", "aduc": "Aduc_N", "Aduc_N": "Aduc_N",
+            "Abduc": "Abduc_N", "abduc": "Abduc_N", "Abduc_N": "Abduc_N",
+            "Ratio": "Ratio_AdAb", "ratio": "Ratio_AdAb", "Ratio_AdAb":"Ratio_AdAb",
         }
         df.rename(columns=ALIAS, inplace=True)
 
         for col in ["Nombre", "Fecha", "Deporte"]:
-            if col not in df.columns:
-                df[col] = ""
+            if col not in df.columns: df[col] = ""
 
         num_cols = ["Edad","Peso_kg","Estatura_m","IMTP_N","F_Rel_NKg",
                     "SJ_cm","CMJ_cm","Abalakov_cm","RSI_Mod","Aduc_N","Abduc_N","Ratio_AdAb"]
         for col in num_cols:
-            if col not in df.columns:
-                df[col] = 0.0
+            if col not in df.columns: df[col] = 0.0
             df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
 
         return df
     except Exception as ex:
         st.warning(f"Error al cargar historial: {ex}")
         return pd.DataFrame()
-
 
 def guardar_fila(cliente, fila: list) -> bool:
     try:
@@ -345,7 +219,6 @@ def guardar_fila(cliente, fila: list) -> bool:
     except Exception as e:
         st.warning(f"No se pudo guardar en Sheets: {e}")
         return False
-
 
 # ─────────────────────────────────────────────
 # CÁLCULOS TÉCNICOS DINÁMICOS
@@ -375,26 +248,19 @@ def clasificar(nota: float) -> tuple[str, str]:
     if nota >= 5:   return "INTERMEDIO",    "#ffa500"
     return              "EN DESARROLLO",    "#ff4b4b"
 
-
 # ─────────────────────────────────────────────
 #  GRÁFICOS (PLOTLY)
 # ─────────────────────────────────────────────
 def chart_velocimetro(titulo, valor, max_val, zona_r, zona_a, zona_v):
     fig = go.Figure(go.Indicator(
-        mode="gauge+number",
-        value=valor,
+        mode="gauge+number", value=valor,
         title={"text": titulo, "font": {"size": 13, "color": "#c8d8f0", "family": "Inter"}},
         number={"font": {"size": 26, "color": "#ffffff"}},
         gauge={
             "axis": {"range": [0, max_val], "tickcolor": "#4a6080", "tickfont": {"color": "#4a6080", "size": 9}},
             "bar": {"color": "#00aaff", "thickness": 0.25},
-            "bgcolor": "#1a2744",
-            "borderwidth": 0,
-            "steps": [
-                {"range": zona_r, "color": "#3d1515"},
-                {"range": zona_a, "color": "#3d2c0a"},
-                {"range": zona_v, "color": "#0d3320"},
-            ],
+            "bgcolor": "#1a2744", "borderwidth": 0,
+            "steps": [ {"range": zona_r, "color": "#3d1515"}, {"range": zona_a, "color": "#3d2c0a"}, {"range": zona_v, "color": "#0d3320"} ],
             "threshold": {"line": {"color": "#00d4ff", "width": 3}, "value": valor},
         },
     ))
@@ -404,23 +270,16 @@ def chart_velocimetro(titulo, valor, max_val, zona_r, zona_a, zona_v):
 def chart_radar(puntos_actual: dict, puntos_previo: dict | None = None):
     cats = list(puntos_actual.keys())
     fig = go.Figure()
-
     if puntos_previo:
         v = list(puntos_previo.values()) + [list(puntos_previo.values())[0]]
         fig.add_trace(go.Scatterpolar(r=v, theta=cats + [cats[0]], fill="toself", name="Evaluación anterior", line=dict(color="rgba(120,140,180,0.6)", width=1.5), fillcolor="rgba(120,140,180,0.08)"))
-
     v = list(puntos_actual.values()) + [list(puntos_actual.values())[0]]
     fig.add_trace(go.Scatterpolar(r=v, theta=cats + [cats[0]], fill="toself", name="Evaluación actual", line=dict(color="#00aaff", width=2.5), fillcolor="rgba(0,170,255,0.12)"))
-
-    fig.update_layout(
-        polar=dict(radialaxis=dict(visible=True, range=[0, 10], tickfont=dict(color="#4a6080", size=9), gridcolor="#1f2d45"), angularaxis=dict(tickfont=dict(color="#c8d8f0", size=11)), bgcolor="rgba(0,0,0,0)"),
-        showlegend=True, legend=dict(font=dict(color="#c8d8f0", size=11), bgcolor="rgba(0,0,0,0)"), height=380, paper_bgcolor="rgba(0,0,0,0)", margin=dict(l=40, r=40, t=20, b=20),
-    )
+    fig.update_layout(polar=dict(radialaxis=dict(visible=True, range=[0, 10], tickfont=dict(color="#4a6080", size=9), gridcolor="#1f2d45"), angularaxis=dict(tickfont=dict(color="#c8d8f0", size=11)), bgcolor="rgba(0,0,0,0)"), showlegend=True, legend=dict(font=dict(color="#c8d8f0", size=11), bgcolor="rgba(0,0,0,0)"), height=380, paper_bgcolor="rgba(0,0,0,0)", margin=dict(l=40, r=40, t=20, b=20))
     return fig
 
 def chart_evolucion(df_atleta: pd.DataFrame, metrica: str, label: str):
-    if df_atleta.empty or metrica not in df_atleta.columns:
-        return None
+    if df_atleta.empty or metrica not in df_atleta.columns: return None
     df = df_atleta.sort_values("Fecha").tail(8)
     fig = go.Figure()
     fig.add_trace(go.Scatter(x=df["Fecha"], y=df[metrica], mode="lines+markers+text", text=[f"{v:.1f}" for v in df[metrica]], textposition="top center", line=dict(color="#00aaff", width=2.5), marker=dict(size=9, color="#00d4ff"), textfont=dict(color="#c8d8f0", size=10)))
@@ -428,8 +287,7 @@ def chart_evolucion(df_atleta: pd.DataFrame, metrica: str, label: str):
     return fig
 
 def chart_barras_grupo(df: pd.DataFrame, metrica: str, label: str):
-    if df.empty or metrica not in df.columns:
-        return None
+    if df.empty or metrica not in df.columns: return None
     df_sorted = df[["Nombre", metrica]].dropna().sort_values(metrica, ascending=True)
     colores_barra = ["#ff4b4b" if v < df_sorted[metrica].median() * 0.85 else "#ffa500" if v < df_sorted[metrica].median() * 1.1 else "#00cc88" for v in df_sorted[metrica]]
     fig = go.Figure(go.Bar(x=df_sorted[metrica], y=df_sorted["Nombre"], orientation="h", marker_color=colores_barra, text=[f"{v:.1f}" for v in df_sorted[metrica]], textposition="outside", textfont=dict(color="#c8d8f0", size=10)))
@@ -445,36 +303,26 @@ def generar_pdf_informe(datos: dict, puntos_act: dict, puntos_prev: dict | None 
     c = canvas.Canvas(buffer, pagesize=A4)
     W, H = A4
 
-    AZUL_OSCURO  = (0.04, 0.07, 0.13)
-    AZUL_MEDIO   = (0.05, 0.13, 0.25)
-    AZUL_PANEL   = (0.07, 0.14, 0.26)
-    AZUL_FILA_A  = (0.07, 0.12, 0.22)
-    AZUL_FILA_B  = (0.05, 0.09, 0.17)
-    AZUL_HEADER  = (0.04, 0.20, 0.38)
-    CIAN         = (0.00, 0.83, 1.00)
-    BLANCO       = (1.00, 1.00, 1.00)
-    GRIS_TEXTO   = (0.78, 0.86, 0.95)
-    GRIS_LABEL   = (0.49, 0.66, 0.86)
-    VERDE        = (0.00, 0.80, 0.53)
-    NARANJA      = (1.00, 0.65, 0.00)
-    ROJO         = (1.00, 0.29, 0.29)
+    AZUL_OSCURO  = (0.04, 0.07, 0.13); AZUL_MEDIO   = (0.05, 0.13, 0.25); AZUL_PANEL   = (0.07, 0.14, 0.26)
+    AZUL_FILA_A  = (0.07, 0.12, 0.22); AZUL_FILA_B  = (0.05, 0.09, 0.17); AZUL_HEADER  = (0.04, 0.20, 0.38)
+    CIAN         = (0.00, 0.83, 1.00); BLANCO       = (1.00, 1.00, 1.00)
+    GRIS_TEXTO   = (0.78, 0.86, 0.95); GRIS_LABEL   = (0.49, 0.66, 0.86)
+    VERDE        = (0.00, 0.80, 0.53); NARANJA      = (1.00, 0.65, 0.00); ROJO         = (1.00, 0.29, 0.29)
 
     def fill(rgb):  c.setFillColorRGB(*rgb)
     def stroke(rgb): c.setStrokeColorRGB(*rgb)
     def rect_f(x, y, w, h, rgb): fill(rgb); c.rect(x, y, w, h, fill=1, stroke=0)
     def rect_s(x, y, w, h, rgb, lw=1): stroke(rgb); c.setLineWidth(lw); c.rect(x, y, w, h, fill=0, stroke=1)
 
+    # AQUÍ ESTÁ LA REPARACIÓN CLAVE DEL COLOR (color_nivel)
     nota   = nota_global(puntos_act)
-   nivel_str, color_nivel = clasificar(nota)
+    nivel_str, color_nivel = clasificar(nota)
 
-    rect_f(0, 0, W, H, AZUL_OSCURO)
-    rect_f(0, H - 220, W, 220, AZUL_MEDIO)
-    rect_f(0, 0, 6, H, CIAN)
+    rect_f(0, 0, W, H, AZUL_OSCURO); rect_f(0, H - 220, W, 220, AZUL_MEDIO); rect_f(0, 0, 6, H, CIAN)
     stroke(CIAN); c.setLineWidth(2); c.line(6, H - 220, W, H - 220)
 
     stroke((0.08, 0.25, 0.45)); c.setLineWidth(0.5)
-    for offset in range(0, 120, 18):
-        c.line(W - 160 + offset * 0.3, H - 10, W - 10, H - 160 + offset * 0.3)
+    for offset in range(0, 120, 18): c.line(W - 160 + offset * 0.3, H - 10, W - 10, H - 160 + offset * 0.3)
 
     import math as _math
     def hexagono(cx, cy, r, color_fill, color_stroke, lw=2):
@@ -483,8 +331,7 @@ def generar_pdf_informe(datos: dict, puntos_act: dict, puntos_prev: dict | None 
         for px, py in pts[1:]: p.lineTo(px, py)
         p.close(); fill(color_fill); c.drawPath(p, fill=1, stroke=0); stroke(color_stroke); c.setLineWidth(lw); c.drawPath(p, fill=0, stroke=1)
 
-    hexagono(55, H - 68, 28, AZUL_PANEL, CIAN, 2)
-    hexagono(55, H - 68, 18, AZUL_OSCURO, CIAN, 1)
+    hexagono(55, H - 68, 28, AZUL_PANEL, CIAN, 2); hexagono(55, H - 68, 18, AZUL_OSCURO, CIAN, 1)
     fill(CIAN); c.setFont("Helvetica-Bold", 20); c.drawCentredString(55, H - 74, "B")
     fill(BLANCO); c.setFont("Helvetica-Bold", 26); c.drawString(92, H - 58, "BIO SPORT")
     fill(CIAN); c.setFont("Helvetica-Bold", 26); c.drawString(92 + 130, H - 58, " PRO")
@@ -503,16 +350,17 @@ def generar_pdf_informe(datos: dict, puntos_act: dict, puntos_prev: dict | None 
         fx = 30 + i * ficha_w; fy = y_centro - 130
         rect_f(fx + 2, fy, ficha_w - 4, 70, AZUL_PANEL); rect_s(fx + 2, fy, ficha_w - 4, 70, (0.10, 0.24, 0.44), 0.6)
         fill(GRIS_LABEL); c.setFont("Helvetica", 7); c.drawCentredString(fx + ficha_w / 2, fy + 54, lbl)
-        fill(BLANCO); c.setFont("Helvetica-Bold", 13); c.drawCentredString(fx + ficha_w / 2, fy + 32, val)
-        fill(CIAN); c.rect(fx + 2, fy, ficha_w - 4, 3, fill=1, stroke=0)
+        fill(BLANCO); c.setFont("Helvetica-Bold", 13); c.drawCentredString(fx + ficha_w / 2, fy + 32, val); fill(CIAN); c.rect(fx + 2, fy, ficha_w - 4, 3, fill=1, stroke=0)
 
     badge_cx = W / 2; badge_cy = y_centro - 270
     for r, alpha in [(80, 0.08), (68, 0.15), (56, 1.0)]:
         if r == 56: hexagono(badge_cx, badge_cy, r, AZUL_PANEL, CIAN, 2.5)
         else: stroke(CIAN); c.setLineWidth(0.5); c.setStrokeAlpha(alpha); c.circle(badge_cx, badge_cy, r, fill=0, stroke=1)
     c.setStrokeAlpha(1.0)
+    
     fill(BLANCO); c.setFont("Helvetica-Bold", 36); c.drawCentredString(badge_cx, badge_cy + 2, f"{nota:.1f}")
     fill(GRIS_LABEL); c.setFont("Helvetica", 10); c.drawCentredString(badge_cx, badge_cy - 18, "/ 10  NOTA GLOBAL")
+    
     r_hex = tuple(int(color_nivel.lstrip("#")[i:i+2], 16) / 255 for i in (0, 2, 4))
     rect_f(badge_cx - 55, badge_cy - 50, 110, 20, r_hex); fill(AZUL_OSCURO); c.setFont("Helvetica-Bold", 9); c.drawCentredString(badge_cx, badge_cy - 44, nivel_str)
 
@@ -564,7 +412,10 @@ def generar_pdf_informe(datos: dict, puntos_act: dict, puntos_prev: dict | None 
             bx = col_x[2] + 6; bw = 90; by_bar = y_t - fila_h + 8
             rect_f(bx, by_bar, bw, 8, (0.08, 0.14, 0.26)); rect_f(bx, by_bar, bw * (puntaje / 10), 8, color_b)
             fill(BLANCO); c.setFont("Helvetica-Bold", 9); c.drawCentredString(col_x[3] + 20, y_t - fila_h + 8, f"{puntaje:.1f}/10")
-            rect_f(col_x[4] + 2, y_t - fila_h + 5, 90, 14, color_b); nivel_lbl, _ = clasificar(puntaje); fill(AZUL_OSCURO); c.setFont("Helvetica-Bold", 7); c.drawCentredString(col_x[4] + 47, y_t - fila_h + 10, nivel_lbl)
+            rect_f(col_x[4] + 2, y_t - fila_h + 5, 90, 14, color_b)
+            # Volvemos a generar la etiqueta de nivel solo para este bloque
+            nivel_lbl, _ = clasificar(puntaje)
+            fill(AZUL_OSCURO); c.setFont("Helvetica-Bold", 7); c.drawCentredString(col_x[4] + 47, y_t - fila_h + 10, nivel_lbl)
         else:
             fill(GRIS_LABEL); c.setFont("Helvetica", 8); c.drawString(col_x[2] + 6, y_t - fila_h + 8, "—")
         y_t -= fila_h
@@ -618,7 +469,12 @@ def generar_pdf_informe(datos: dict, puntos_act: dict, puntos_prev: dict | None 
     badge2_cx = dx + 100; badge2_cy = dy - 55
     hexagono(badge2_cx, badge2_cy, 42, AZUL_PANEL, CIAN, 2); fill(BLANCO); c.setFont("Helvetica-Bold", 22); c.drawCentredString(badge2_cx, badge2_cy + 4, f"{nota:.1f}")
     fill(GRIS_LABEL); c.setFont("Helvetica", 7); c.drawCentredString(badge2_cx, badge2_cy - 10, "NOTA GLOBAL / 10")
-    _, color_nivel = clasificar(nota); r_hex2 = tuple(int(color_nivel.lstrip("#")[i:i+2], 16)/255 for i in (0,2,4)); rect_f(badge2_cx - 38, badge2_cy - 30, 76, 14, r_hex2)
+    
+    # REPARACIÓN 2 DEL COLOR DE NIVEL:
+    _, color_nivel2 = clasificar(nota)
+    r_hex2 = tuple(int(color_nivel2.lstrip("#")[i:i+2], 16)/255 for i in (0,2,4))
+    
+    rect_f(badge2_cx - 38, badge2_cy - 30, 76, 14, r_hex2)
     fill(AZUL_OSCURO); c.setFont("Helvetica-Bold", 7); c.drawCentredString(badge2_cx, badge2_cy - 24, nivel_str)
 
     rect_f(0, 0, W, 28, (0.03, 0.05, 0.10)); stroke((0.08, 0.20, 0.38)); c.setLineWidth(0.5); c.line(6, 28, W, 28); fill(GRIS_LABEL); c.setFont("Helvetica", 7)
@@ -733,7 +589,6 @@ with tab_eval:
     with c2: peso     = st.number_input("Peso (kg)", min_value=30.0, max_value=180.0, step=0.1, value=75.0)
     with c3: estatura = st.number_input("Estatura (m)", min_value=1.40, max_value=2.20, step=0.01, value=1.75)
     
-    # ¡AQUÍ ESTÁ EL PASO 3 APLICADO!
     with c4: 
         deporte = st.selectbox(
             "Deporte / Disciplina", 
@@ -769,7 +624,6 @@ with tab_eval:
         f_rel_live = round(imtp / peso, 1) if peso > 0 else 0
         ratio_live = round(aduc / abduc, 2) if abduc > 0 else 1.0
         
-        # ¡AQUÍ ESTÁ EL PASO 4 APLICADO EN LA VISTA PREVIA!
         pts_live   = calcular_puntos(sj, cmj, abalakov, f_rel_live, ratio_live, deporte)
         nota_live  = nota_global(pts_live)
         nivel_live, color_live = clasificar(nota_live)
@@ -792,7 +646,6 @@ with tab_eval:
         chips_html += '</div>'
         st.markdown(chips_html, unsafe_allow_html=True)
 
-        # Gráficos dinámicos según el deporte
         max_sj = BAREMOS_DEPORTIVOS.get(deporte, BAREMOS_DEPORTIVOS["General / Recreacional"])["SJ"]
         max_cmj = BAREMOS_DEPORTIVOS.get(deporte, BAREMOS_DEPORTIVOS["General / Recreacional"])["CMJ"]
         max_rsi = BAREMOS_DEPORTIVOS.get(deporte, BAREMOS_DEPORTIVOS["General / Recreacional"])["RSI"]
@@ -859,13 +712,11 @@ with tab_eval:
             else:
                 st.info("ℹ️ Sin conexión a Google Sheets — el PDF se genera igual.")
 
-            # ¡AQUÍ ESTÁ EL PASO 4 APLICADO EN EL GUARDADO!
             puntos_act = calcular_puntos(sj, cmj, abalakov, f_rel, ratio, deporte)
 
             puntos_prev = None
             if eval_previa:
                 try:
-                    # También pasamos el deporte para calcular correctamente el radar previo
                     dep_previo = str(eval_previa.get("Deporte", deporte))
                     if dep_previo not in BAREMOS_DEPORTIVOS:
                         dep_previo = "General / Recreacional"
