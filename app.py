@@ -249,14 +249,70 @@ def cargar_historial(_cliente):
             return pd.DataFrame()
         df = pd.DataFrame(registros)
         df.columns = [str(c).strip() for c in df.columns]
+
+        # ── Normalizar nombres de columna del sheet anterior al nuevo esquema ──
+        # Mapeo: nombre_viejo -> nombre_nuevo
+        ALIAS = {
+            "nombre":    "Nombre",
+            "Nombre":    "Nombre",
+            "fecha":     "Fecha",
+            "Fecha":     "Fecha",
+            "deporte":   "Deporte",
+            "Deporte":   "Deporte",
+            "edad":      "Edad",
+            "Edad":      "Edad",
+            "peso":      "Peso_kg",
+            "Peso":      "Peso_kg",
+            "Peso_kg":   "Peso_kg",
+            "estatura":  "Estatura_m",
+            "Estatura":  "Estatura_m",
+            "Estatura_m":"Estatura_m",
+            "SJ":        "SJ_cm",
+            "sj":        "SJ_cm",
+            "SJ_cm":     "SJ_cm",
+            "CMJ":       "CMJ_cm",
+            "cmj":       "CMJ_cm",
+            "CMJ_cm":    "CMJ_cm",
+            "Abalakov":  "Abalakov_cm",
+            "abalakov":  "Abalakov_cm",
+            "Abalakov_cm":"Abalakov_cm",
+            "IMTP":      "IMTP_N",
+            "imtp":      "IMTP_N",
+            "IMTP_N":    "IMTP_N",
+            "F_Rel":     "F_Rel_NKg",
+            "f_rel":     "F_Rel_NKg",
+            "F_Rel_NKg": "F_Rel_NKg",
+            "RSI":       "RSI_Mod",
+            "rsi":       "RSI_Mod",
+            "RSI_Mod":   "RSI_Mod",
+            "Aduc":      "Aduc_N",
+            "aduc":      "Aduc_N",
+            "Aduc_N":    "Aduc_N",
+            "Abduc":     "Abduc_N",
+            "abduc":     "Abduc_N",
+            "Abduc_N":   "Abduc_N",
+            "Ratio":     "Ratio_AdAb",
+            "ratio":     "Ratio_AdAb",
+            "Ratio_AdAb":"Ratio_AdAb",
+        }
+        df.rename(columns=ALIAS, inplace=True)
+
+        # Asegurarse de que siempre existan las columnas clave aunque estén vacías
+        for col in ["Nombre", "Fecha", "Deporte"]:
+            if col not in df.columns:
+                df[col] = ""
+
         # Limpiar columnas numéricas
         num_cols = ["Edad","Peso_kg","Estatura_m","IMTP_N","F_Rel_NKg",
                     "SJ_cm","CMJ_cm","Abalakov_cm","RSI_Mod","Aduc_N","Abduc_N","Ratio_AdAb"]
         for col in num_cols:
-            if col in df.columns:
-                df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
+            if col not in df.columns:
+                df[col] = 0.0
+            df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
+
         return df
-    except Exception:
+    except Exception as ex:
+        st.warning(f"Error al cargar historial: {ex}")
         return pd.DataFrame()
 
 
@@ -687,16 +743,21 @@ def generar_pdf_grupal(df: pd.DataFrame) -> BytesIO:
     fecha_hoy = datetime.now().strftime("%d/%m/%Y")
     c.drawString(40, alto - 70, f"Generado el {fecha_hoy}  ·  {len(df)} atletas evaluados")
 
-    # Tabla
-    cols_mostrar = ["Nombre", "Deporte", "SJ_cm", "CMJ_cm", "Abalakov_cm", "F_Rel_NKg", "RSI_Mod"]
-    cols_labels  = ["Nombre", "Deporte", "SJ", "CMJ", "Abalakov", "F.Rel", "RSI"]
+    # Tabla — solo columnas que existan en el df
+    _cols_candidatos = [
+        ("Nombre","Nombre"), ("Deporte","Deporte"), ("SJ_cm","SJ"),
+        ("CMJ_cm","CMJ"), ("Abalakov_cm","Abalakov"), ("F_Rel_NKg","F.Rel"), ("RSI_Mod","RSI"),
+    ]
+    cols_mostrar = [c for c, _ in _cols_candidatos if c in df.columns]
+    cols_labels  = [lbl for c, lbl in _cols_candidatos if c in df.columns]
     df_show = df[cols_mostrar].tail(50).copy()
 
     tabla_data = [cols_labels]
     for _, row in df_show.iterrows():
         tabla_data.append([str(row[c])[:18] for c in cols_mostrar])
 
-    t = Table(tabla_data, colWidths=[110, 80, 50, 50, 55, 50, 50])
+    _all_widths = [110, 80, 50, 50, 55, 50, 50]
+    t = Table(tabla_data, colWidths=_all_widths[:len(cols_mostrar)])
     t.setStyle(TableStyle([
         ("BACKGROUND",   (0, 0), (-1, 0), colors.HexColor("#0f3460")),
         ("TEXTCOLOR",    (0, 0), (-1, 0), colors.HexColor("#00d4ff")),
@@ -990,75 +1051,82 @@ with tab_eval:
 #  TAB 2 — HISTORIAL INDIVIDUAL
 # ════════════════════════════════════════════════
 with tab_historial:
-    if data_historica.empty:
+    _col_nombre_ok = not data_historica.empty and "Nombre" in data_historica.columns
+    if not _col_nombre_ok:
         st.info("Aún no hay evaluaciones guardadas. Completa una evaluación para empezar.")
     else:
-        nombres_hist = sorted(data_historica["Nombre"].dropna().unique().tolist())
-        atleta_hist  = st.selectbox("Seleccionar atleta", nombres_hist, key="hist_sel")
-
-        df_at = data_historica[data_historica["Nombre"] == atleta_hist].copy()
-
-        if df_at.empty:
-            st.warning("No hay registros para este atleta.")
+        nombres_hist = sorted([n for n in data_historica["Nombre"].dropna().unique().tolist() if str(n).strip()])
+        if not nombres_hist:
+            st.info("No se encontraron atletas en el historial.")
         else:
-            st.markdown(f"**{len(df_at)} evaluación(es) encontrada(s)**")
+            atleta_hist = st.selectbox("Seleccionar atleta", nombres_hist, key="hist_sel")
+            df_at = data_historica[data_historica["Nombre"] == atleta_hist].copy()
 
-            # Última evaluación
-            ultima = df_at.iloc[-1]
-            col_m1, col_m2, col_m3, col_m4, col_m5 = st.columns(5)
-            metrics = [
-                ("SJ", "SJ_cm", "cm"), ("CMJ", "CMJ_cm", "cm"),
-                ("Abalakov", "Abalakov_cm", "cm"), ("F. Relativa", "F_Rel_NKg", "N/kg"), ("RSI", "RSI_Mod", ""),
-            ]
-            for col, (lab, col_key, uni) in zip([col_m1,col_m2,col_m3,col_m4,col_m5], metrics):
-                val = ultima.get(col_key, 0)
-                col.metric(label=lab, value=f"{val:.1f} {uni}".strip())
+            if df_at.empty:
+                st.warning("No hay registros para este atleta.")
+            else:
+                st.markdown(f"**{len(df_at)} evaluación(es) encontrada(s)**")
 
-            # Gráficos de evolución
-            st.markdown("#### Evolución Histórica")
-            evo_cols = [
-                ("SJ_cm", "Squat Jump (cm)"),
-                ("CMJ_cm", "CMJ (cm)"),
-                ("Abalakov_cm", "Abalakov (cm)"),
-                ("F_Rel_NKg", "Fuerza Relativa (N/kg)"),
-            ]
-            for col_a, col_b in zip(evo_cols[::2], evo_cols[1::2]):
-                c1e, c2e = st.columns(2)
-                with c1e:
-                    fig = chart_evolucion(df_at, col_a[0], col_a[1])
-                    if fig: st.plotly_chart(fig, use_container_width=True)
-                with c2e:
-                    fig = chart_evolucion(df_at, col_b[0], col_b[1])
-                    if fig: st.plotly_chart(fig, use_container_width=True)
+                # Última evaluación
+                ultima = df_at.iloc[-1]
+                col_m1, col_m2, col_m3, col_m4, col_m5 = st.columns(5)
+                metrics = [
+                    ("SJ", "SJ_cm", "cm"), ("CMJ", "CMJ_cm", "cm"),
+                    ("Abalakov", "Abalakov_cm", "cm"), ("F. Relativa", "F_Rel_NKg", "N/kg"), ("RSI", "RSI_Mod", ""),
+                ]
+                for col, (lab, col_key, uni) in zip([col_m1,col_m2,col_m3,col_m4,col_m5], metrics):
+                    val = float(ultima.get(col_key, 0) or 0)
+                    col.metric(label=lab, value=f"{val:.1f} {uni}".strip())
 
-            # Tabla completa
-            with st.expander("Ver tabla completa de evaluaciones"):
-                st.dataframe(df_at, use_container_width=True)
+                # Gráficos de evolución
+                st.markdown("#### Evolución Histórica")
+                evo_cols = [
+                    ("SJ_cm", "Squat Jump (cm)"),
+                    ("CMJ_cm", "CMJ (cm)"),
+                    ("Abalakov_cm", "Abalakov (cm)"),
+                    ("F_Rel_NKg", "Fuerza Relativa (N/kg)"),
+                ]
+                for col_a, col_b in zip(evo_cols[::2], evo_cols[1::2]):
+                    c1e, c2e = st.columns(2)
+                    with c1e:
+                        fig = chart_evolucion(df_at, col_a[0], col_a[1])
+                        if fig: st.plotly_chart(fig, use_container_width=True)
+                    with c2e:
+                        fig = chart_evolucion(df_at, col_b[0], col_b[1])
+                        if fig: st.plotly_chart(fig, use_container_width=True)
+
+                # Tabla completa
+                with st.expander("Ver tabla completa de evaluaciones"):
+                    st.dataframe(df_at, use_container_width=True)
 
 
 # ════════════════════════════════════════════════
 #  TAB 3 — INFORME GRUPAL
 # ════════════════════════════════════════════════
 with tab_grupo:
-    if data_historica.empty:
+    if data_historica.empty or "Nombre" not in data_historica.columns:
         st.info("Aún no hay evaluaciones en el sistema.")
     else:
         st.markdown("#### Comparativa del Grupo")
 
         # Filtro por deporte
-        deportes_disponibles = ["Todos"] + sorted(
-            data_historica["Deporte"].dropna().unique().tolist()
-            if "Deporte" in data_historica.columns else []
-        )
+        if "Deporte" in data_historica.columns:
+            deportes_lista = sorted(data_historica["Deporte"].dropna().unique().tolist())
+        else:
+            deportes_lista = []
+        deportes_disponibles = ["Todos"] + deportes_lista
         deporte_filtro = st.selectbox("Filtrar por deporte / posición", deportes_disponibles)
 
         df_grupo = data_historica.copy()
-        if deporte_filtro != "Todos":
+        if deporte_filtro != "Todos" and "Deporte" in df_grupo.columns:
             df_grupo = df_grupo[df_grupo["Deporte"] == deporte_filtro]
 
         # Tomar la evaluación más reciente por atleta
-        if "Fecha" in df_grupo.columns:
-            df_grupo = df_grupo.sort_values("Fecha").groupby("Nombre").last().reset_index()
+        if "Fecha" in df_grupo.columns and "Nombre" in df_grupo.columns:
+            try:
+                df_grupo = df_grupo.sort_values("Fecha").groupby("Nombre").last().reset_index()
+            except Exception:
+                pass
 
         st.markdown(f"**{len(df_grupo)} atleta(s) en el grupo**")
 
@@ -1081,7 +1149,10 @@ with tab_grupo:
         # Tabla resumen
         st.markdown("#### Tabla Resumen")
         cols_display = [c for c in ["Nombre","Deporte","Fecha","SJ_cm","CMJ_cm","Abalakov_cm","F_Rel_NKg","RSI_Mod"] if c in df_grupo.columns]
-        st.dataframe(df_grupo[cols_display], use_container_width=True)
+        if cols_display:
+            st.dataframe(df_grupo[cols_display], use_container_width=True)
+        else:
+            st.dataframe(df_grupo, use_container_width=True)
 
         # Descarga PDF grupal
         with st.spinner("Preparando PDF grupal…"):
