@@ -465,7 +465,7 @@ def generar_pdf_informe(datos: dict, puntos_act: dict, puntos_prev: dict | None 
     def rect_s(x, y, w, h, rgb, lw=1): stroke(rgb); c.setLineWidth(lw); c.rect(x, y, w, h, fill=0, stroke=1)
 
     nota   = nota_global(puntos_act)
-    nivel_str, _ = clasificar(nota)
+   nivel_str, color_nivel = clasificar(nota)
 
     rect_f(0, 0, W, H, AZUL_OSCURO)
     rect_f(0, H - 220, W, 220, AZUL_MEDIO)
