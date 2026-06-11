@@ -1,6 +1,6 @@
 """
 Bio Sport Pro — Evaluación Deportiva de Alto Rendimiento
-Versión 3.3 — Guardado Híbrido, Baremos Dinámicos y PDF Reparado
+Versión 3.4 — Guardado Híbrido, Baremos Dinámicos, PDF Reparado y Gráficos Blindados
 """
 
 import streamlit as st
@@ -314,7 +314,6 @@ def generar_pdf_informe(datos: dict, puntos_act: dict, puntos_prev: dict | None 
     def rect_f(x, y, w, h, rgb): fill(rgb); c.rect(x, y, w, h, fill=1, stroke=0)
     def rect_s(x, y, w, h, rgb, lw=1): stroke(rgb); c.setLineWidth(lw); c.rect(x, y, w, h, fill=0, stroke=1)
 
-    # AQUÍ ESTÁ LA REPARACIÓN CLAVE DEL COLOR (color_nivel)
     nota   = nota_global(puntos_act)
     nivel_str, color_nivel = clasificar(nota)
 
@@ -379,8 +378,8 @@ def generar_pdf_informe(datos: dict, puntos_act: dict, puntos_prev: dict | None 
         fill(GRIS_LABEL); c.setFont("Helvetica", 7); bx_legend = barra_x0 + 110; by_legend = barra_y - len(puntos_act) * 22 - 10
         rect_f(bx_legend, by_legend, 10, 8, (0.35, 0.42, 0.55)); c.drawString(bx_legend + 14, by_legend, "Evaluación anterior")
 
-    rect_f(0, 0, W, 28, (0.03, 0.05, 0.10)); stroke((0.08, 0.20, 0.38)); c.setLineWidth(0.5); c.line(6, 28, W, 28)
-    fill(GRIS_LABEL); c.setFont("Helvetica", 7); c.drawString(20, 10, "Bio Sport Pro  ·  Evaluación Deportiva de Alto Rendimiento"); c.drawRightString(W - 20, 10, f"Página 1 de 2  ·  {datos['fecha']}")
+    rect_f(0, 0, W, 28, (0.03, 0.05, 0.10)); stroke((0.08, 0.20, 0.38)); c.setLineWidth(0.5); c.line(6, 28, W, 28); fill(GRIS_LABEL); c.setFont("Helvetica", 7)
+    c.drawString(20, 10, "Bio Sport Pro  ·  Evaluación Deportiva de Alto Rendimiento"); c.drawRightString(W - 20, 10, f"Página 1 de 2  ·  {datos['fecha']}")
 
     c.showPage(); rect_f(0, 0, W, H, AZUL_OSCURO); rect_f(0, 0, 6, H, CIAN); rect_f(0, H - 60, W, 60, AZUL_MEDIO)
     stroke(CIAN); c.setLineWidth(1.5); c.line(6, H - 60, W, H - 60); fill(BLANCO); c.setFont("Helvetica-Bold", 13); c.drawString(24, H - 35, "RESULTADOS TÉCNICOS")
@@ -412,10 +411,7 @@ def generar_pdf_informe(datos: dict, puntos_act: dict, puntos_prev: dict | None 
             bx = col_x[2] + 6; bw = 90; by_bar = y_t - fila_h + 8
             rect_f(bx, by_bar, bw, 8, (0.08, 0.14, 0.26)); rect_f(bx, by_bar, bw * (puntaje / 10), 8, color_b)
             fill(BLANCO); c.setFont("Helvetica-Bold", 9); c.drawCentredString(col_x[3] + 20, y_t - fila_h + 8, f"{puntaje:.1f}/10")
-            rect_f(col_x[4] + 2, y_t - fila_h + 5, 90, 14, color_b)
-            # Volvemos a generar la etiqueta de nivel solo para este bloque
-            nivel_lbl, _ = clasificar(puntaje)
-            fill(AZUL_OSCURO); c.setFont("Helvetica-Bold", 7); c.drawCentredString(col_x[4] + 47, y_t - fila_h + 10, nivel_lbl)
+            rect_f(col_x[4] + 2, y_t - fila_h + 5, 90, 14, color_b); nivel_lbl, _ = clasificar(puntaje); fill(AZUL_OSCURO); c.setFont("Helvetica-Bold", 7); c.drawCentredString(col_x[4] + 47, y_t - fila_h + 10, nivel_lbl)
         else:
             fill(GRIS_LABEL); c.setFont("Helvetica", 8); c.drawString(col_x[2] + 6, y_t - fila_h + 8, "—")
         y_t -= fila_h
@@ -470,7 +466,6 @@ def generar_pdf_informe(datos: dict, puntos_act: dict, puntos_prev: dict | None 
     hexagono(badge2_cx, badge2_cy, 42, AZUL_PANEL, CIAN, 2); fill(BLANCO); c.setFont("Helvetica-Bold", 22); c.drawCentredString(badge2_cx, badge2_cy + 4, f"{nota:.1f}")
     fill(GRIS_LABEL); c.setFont("Helvetica", 7); c.drawCentredString(badge2_cx, badge2_cy - 10, "NOTA GLOBAL / 10")
     
-    # REPARACIÓN 2 DEL COLOR DE NIVEL:
     _, color_nivel2 = clasificar(nota)
     r_hex2 = tuple(int(color_nivel2.lstrip("#")[i:i+2], 16)/255 for i in (0,2,4))
     
@@ -652,11 +647,11 @@ with tab_eval:
 
         vm1, vm2, vm3 = st.columns(3)
         with vm1: st.plotly_chart(chart_velocimetro("Squat Jump", sj, max_sj,
-            [0, max_sj*0.5], [max_sj*0.5, max_sj*0.7], [max_sj*0.7, max_sj]), use_container_width=True)
+            [0, max_sj*0.5], [max_sj*0.5, max_sj*0.7], [max_sj*0.7, max_sj]), use_container_width=True, key="prev_sj")
         with vm2: st.plotly_chart(chart_velocimetro("CMJ", cmj, max_cmj,
-            [0, max_cmj*0.5], [max_cmj*0.5, max_cmj*0.7], [max_cmj*0.7, max_cmj]), use_container_width=True)
+            [0, max_cmj*0.5], [max_cmj*0.5, max_cmj*0.7], [max_cmj*0.7, max_cmj]), use_container_width=True, key="prev_cmj")
         with vm3: st.plotly_chart(chart_velocimetro("RSI Mod.", rsi, max_rsi,
-            [0, max_rsi*0.33], [max_rsi*0.33, max_rsi*0.55], [max_rsi*0.55, max_rsi]), use_container_width=True)
+            [0, max_rsi*0.33], [max_rsi*0.33, max_rsi*0.55], [max_rsi*0.55, max_rsi]), use_container_width=True, key="prev_rsi")
 
         st.markdown('</div>', unsafe_allow_html=True)
 
@@ -769,7 +764,7 @@ with tab_eval:
             """, unsafe_allow_html=True)
 
         with col_radar:
-            st.plotly_chart(chart_radar(ra, rp), use_container_width=True)
+            st.plotly_chart(chart_radar(ra, rp), use_container_width=True, key="res_radar")
 
         if rp:
             st.info("💡 La sombra semitransparente del radar representa la evaluación anterior del atleta.")
@@ -780,10 +775,10 @@ with tab_eval:
         v1, v2 = st.columns(2)
         with v1: st.plotly_chart(chart_velocimetro(
             "CMJ", d["cmj"], max_cmj,
-            [0, max_cmj*0.5], [max_cmj*0.5, max_cmj*0.7], [max_cmj*0.7, max_cmj]), use_container_width=True)
+            [0, max_cmj*0.5], [max_cmj*0.5, max_cmj*0.7], [max_cmj*0.7, max_cmj]), use_container_width=True, key="res_cmj")
         with v2: st.plotly_chart(chart_velocimetro(
             "RSI Modificado", d["rsi"], max_rsi,
-            [0, max_rsi*0.33], [max_rsi*0.33, max_rsi*0.55], [max_rsi*0.55, max_rsi]), use_container_width=True)
+            [0, max_rsi*0.33], [max_rsi*0.33, max_rsi*0.55], [max_rsi*0.55, max_rsi]), use_container_width=True, key="res_rsi")
 
         st.download_button(
             label="📥 DESCARGAR INFORME OFICIAL (PDF)",
@@ -835,10 +830,10 @@ with tab_historial:
                     c1e, c2e = st.columns(2)
                     with c1e:
                         fig = chart_evolucion(df_at, col_a[0], col_a[1])
-                        if fig: st.plotly_chart(fig, use_container_width=True)
+                        if fig: st.plotly_chart(fig, use_container_width=True, key=f"hist_evo_{col_a[0]}")
                     with c2e:
                         fig = chart_evolucion(df_at, col_b[0], col_b[1])
-                        if fig: st.plotly_chart(fig, use_container_width=True)
+                        if fig: st.plotly_chart(fig, use_container_width=True, key=f"hist_evo_{col_b[0]}")
 
                 with st.expander("Ver tabla completa de evaluaciones"):
                     st.dataframe(df_at, use_container_width=True)
@@ -882,10 +877,10 @@ with tab_grupo:
             c1g, c2g = st.columns(2)
             with c1g:
                 fig = chart_barras_grupo(df_grupo, col_a[0], col_a[1])
-                if fig: st.plotly_chart(fig, use_container_width=True)
+                if fig: st.plotly_chart(fig, use_container_width=True, key=f"grupo_bar_{col_a[0]}")
             with c2g:
                 fig = chart_barras_grupo(df_grupo, col_b[0], col_b[1])
-                if fig: st.plotly_chart(fig, use_container_width=True)
+                if fig: st.plotly_chart(fig, use_container_width=True, key=f"grupo_bar_{col_b[0]}")
 
         st.markdown("#### Tabla Resumen")
         cols_display = [c for c in ["Nombre","Deporte","Fecha","SJ_cm","CMJ_cm","Abalakov_cm","F_Rel_NKg","RSI_Mod"] if c in df_grupo.columns]
