@@ -69,7 +69,7 @@ hr { border-color: #1f2d45 !important; }
 # ─────────────────────────────────────────────
 #  ESTADO DE SESIÓN
 # ─────────────────────────────────────────────
-for k, v in {"informe_actual": None, "cache_ver": 0, "_df": None}.items():
+for k, v in {"informe_actual": None, "cache_ver": 0, "_df": None, "_local_rows": []}.items():
     if k not in st.session_state:
         st.session_state[k] = v
 
@@ -120,25 +120,65 @@ def _fetch_sheets(_ver, _cliente):
         return pd.DataFrame()
 
 def get_df():
-    """Devuelve siempre el DataFrame actualizado desde session_state."""
+    """
+    Devuelve el DataFrame combinando:
+      1. Datos de Google Sheets (si hay conexión)
+      2. Registros guardados localmente en esta sesión (_local_rows)
+    Así los atletas ingresados SIN Sheets aparecen igual en el historial.
+    """
     if st.session_state["_df"] is None:
         st.session_state["_df"] = _fetch_sheets(st.session_state["cache_ver"], cliente_sheets)
-    return st.session_state["_df"]
+
+    df_sheets = st.session_state["_df"]
+
+    # Combinar con filas locales de la sesión
+    local = st.session_state.get("_local_rows", [])
+    if not local:
+        return df_sheets
+
+    df_local = pd.DataFrame(local, columns=COLUMNAS_SHEETS)
+    # Normalizar tipos numéricos en local
+    for col in ["Edad","Peso_kg","Estatura_m","IMTP_N","F_Rel_NKg",
+                "SJ_cm","CMJ_cm","Abalakov_cm","RSI_Mod","Aduc_N","Abduc_N","Ratio_AdAb"]:
+        df_local[col] = pd.to_numeric(df_local[col], errors="coerce").fillna(0)
+
+    if df_sheets.empty:
+        return df_local
+
+    # Evitar duplicar filas que ya llegaron de Sheets
+    combined = pd.concat([df_sheets, df_local], ignore_index=True)
+    combined = combined.drop_duplicates(subset=["Fecha","Nombre","CMJ_cm"], keep="first")
+    return combined
+
 
 def invalidar_y_recargar():
     """Incrementa versión → próximo get_df() va directo a Sheets."""
     st.session_state["cache_ver"] += 1
     st.session_state["_df"] = None
 
+
 def guardar_fila(cliente, fila: list) -> bool:
+    """
+    Guarda en Google Sheets SI hay conexión.
+    SIEMPRE guarda en _local_rows de session_state para que
+    el historial y el selector de atletas se actualicen de inmediato.
+    """
+    # Guardar localmente siempre (modo offline o con Sheets)
+    st.session_state["_local_rows"].append(fila)
+    st.session_state["_df"] = None  # forzar recomposición en próximo get_df()
+
+    # Intentar sincronizar con Sheets
+    if cliente is None:
+        return False
     try:
         hoja = cliente.open("BioSport_BD").sheet1
         if len(hoja.get_all_values()) == 0:
             hoja.append_row(COLUMNAS_SHEETS)
         hoja.append_row(fila)
+        invalidar_y_recargar()  # refrescar desde Sheets para no tener duplicados
         return True
     except Exception as e:
-        st.warning(f"No se pudo guardar en Sheets: {e}")
+        st.warning(f"Sin conexión a Sheets — guardado solo en sesión local: {e}")
         return False
 
 # ─────────────────────────────────────────────
@@ -591,16 +631,14 @@ with tab_eval:
                 if mask.any():
                     eval_previa = df_actual[mask].iloc[-1].to_dict()
 
-            # Guardar en Sheets
-            if cliente_sheets:
-                fila = [fecha, nombre.strip(), int(edad), round(peso,1), round(estatura,2),
-                        deporte, imtp, f_rel, sj, cmj, abalakov, rsi, aduc, abduc, ratio]
-                if guardar_fila(cliente_sheets, fila):
-                    # Invalidar cache → próximo rerun recarga desde Sheets
-                    invalidar_y_recargar()
-                    st.success("✅ Evaluación guardada en Google Sheets.")
+            # Guardar — siempre en local, opcionalmente en Sheets
+            fila = [fecha, nombre.strip(), int(edad), round(peso,1), round(estatura,2),
+                    deporte, imtp, f_rel, sj, cmj, abalakov, rsi, aduc, abduc, ratio]
+            guardado_sheets = guardar_fila(cliente_sheets, fila)
+            if guardado_sheets:
+                st.success("✅ Evaluación guardada en Google Sheets.")
             else:
-                st.info("ℹ️ Sin conexión a Google Sheets — el PDF se genera igual.")
+                st.info("💾 Evaluación guardada en sesión local (sin conexión a Sheets).")
 
             puntos_act = calcular_puntos(sj,cmj,abalakov,f_rel,ratio,deporte)
             puntos_prev = None
