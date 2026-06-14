@@ -563,18 +563,25 @@ with tab_eval:
     st.markdown('<div class="section-card">', unsafe_allow_html=True)
     st.markdown('<p class="section-title">Pruebas de Potencia y Salto</p>', unsafe_allow_html=True)
     p1,p2,p3,p4 = st.columns(4)
-    with p1: sj       = st.number_input("SJ (cm)",        min_value=0.0, max_value=100.0, step=0.1, value=0.0)
-    with p2: cmj      = st.number_input("CMJ (cm)",       min_value=0.0, max_value=100.0, step=0.1, value=0.0)
-    with p3: abalakov = st.number_input("Abalakov (cm)",  min_value=0.0, max_value=100.0, step=0.1, value=0.0)
-    with p4: rsi      = st.number_input("RSI Modificado", min_value=0.0, max_value=5.0,   step=0.01,value=0.0)
+    with p1: sj       = st.number_input("SJ (cm)",        min_value=0.0, max_value=100.0, step=0.1, value=0.0,
+        help="Squat Jump: salto concéntrico puro desde 90° de flexión sin contramovimiento. Evalúa la fuerza explosiva bruta del tren inferior.")
+    with p2: cmj      = st.number_input("CMJ (cm)",       min_value=0.0, max_value=100.0, step=0.1, value=0.0,
+        help="Counter Movement Jump: salto con contramovimiento. Evalúa la capacidad elástica y el aprovechamiento del ciclo estiramiento-acortamiento (CEA). Siempre debe superar al SJ.")
+    with p3: abalakov = st.number_input("Abalakov (cm)",  min_value=0.0, max_value=100.0, step=0.1, value=0.0,
+        help="Salto con contramovimiento y uso libre de brazos. Evalúa la coordinación global y el aporte del tren superior. Típicamente 8-12 cm mayor que el CMJ.")
+    with p4: rsi      = st.number_input("RSI Modificado", min_value=0.0, max_value=5.0,   step=0.01, value=0.0,
+        help="Reactive Strength Index: evalúa la rigidez tendinosa (stiffness) y la reactividad del complejo tobillo-pantorrilla. <1.0 = bajo · 1.0-1.5 = moderado · >1.5 = alto (Flanagan & Comyns, 2008).")
     st.markdown('</div>', unsafe_allow_html=True)
 
     st.markdown('<div class="section-card">', unsafe_allow_html=True)
     st.markdown('<p class="section-title">Fuerza Isométrica y Dinamometría</p>', unsafe_allow_html=True)
     f1,f2,f3 = st.columns(3)
-    with f1: imtp  = st.number_input("IMTP (N)",       min_value=0.0, step=10.0, value=0.0)
-    with f2: aduc  = st.number_input("Aductores (N)",  min_value=0.0, step=1.0,  value=0.0)
-    with f3: abduc = st.number_input("Abductores (N)", min_value=0.0, step=1.0,  value=0.0)
+    with f1: imtp  = st.number_input("IMTP (N)",       min_value=0.0, step=10.0, value=0.0,
+        help="Isometric Mid-Thigh Pull: fuerza máxima isométrica en tirón a media muslo. La app calcula automáticamente la Fuerza Relativa (N/kg) dividiendo por el peso del atleta.")
+    with f2: aduc  = st.number_input("Aductores (N)",  min_value=0.0, step=1.0,  value=0.0,
+        help="Fuerza de aductores en Newtons (dinamometría de cadera). Se cruza con abductores para calcular el Ratio de equilibrio muscular y estimar riesgo de pubalgia (Tyler et al., 2001).")
+    with f3: abduc = st.number_input("Abductores (N)", min_value=0.0, step=1.0,  value=0.0,
+        help="Fuerza de abductores en Newtons. Ratio óptimo Aduc/Abduc: 0.80–0.95. Por debajo de 0.70 el riesgo de lesión inguinal aumenta significativamente.")
     st.markdown('</div>', unsafe_allow_html=True)
 
     if any([sj>0, cmj>0, abalakov>0, imtp>0]):
